@@ -10,9 +10,22 @@ export const mockResults: Record<Classification, MockBase> = {
     summary: 'A informação é compatível com os registros oficiais consultados.',
     explanation:
       'Os dados citados foram localizados em fontes oficiais e correspondem ao que foi informado, incluindo valores e datas. Não foram encontradas divergências relevantes entre as fontes.',
+    confidence: 'alta',
+    confidenceExplanation:
+      'Análise respaldada por múltiplos registros orçamentários oficiais primários e portaria publicada no Diário Oficial da União.',
+    claims: [
+      {
+        id: 'claim-conf-1',
+        text: 'Ministério da Saúde repassou R$ 45 milhões para reforço hospitalar dos municípios neste ano.',
+        status: 'confirmada',
+        statusLabel: 'Fato confirmado',
+        evidenceIds: ['ev-conf-1', 'ev-conf-2', 'ev-conf-3'],
+      },
+    ],
     evidences: [
       {
         id: 'ev-conf-1',
+        claimId: 'claim-conf-1',
         title: 'Nota de Empenho no Portal da Transparência',
         description: 'Registro orçamentário oficial confirmando a destinação e liquidação dos recursos para o programa citado.',
         quote: 'Nota de Empenho nº 2024NE001429 — Favorecido: Fundo Nacional de Saúde — Valor liquidado: R$ 45.000.000,00',
@@ -24,6 +37,7 @@ export const mockResults: Record<Classification, MockBase> = {
       },
       {
         id: 'ev-conf-2',
+        claimId: 'claim-conf-1',
         title: 'Publicação no Diário Oficial da União',
         description: 'Portaria ministerial autorizando o repasse e detalhando o cronograma de liberação dos recursos.',
         quote: 'Portaria GM/MS nº 892 de 15 de março de 2024, publicada no DOU Seção 1, pág. 72.',
@@ -35,6 +49,7 @@ export const mockResults: Record<Classification, MockBase> = {
       },
       {
         id: 'ev-conf-3',
+        claimId: 'claim-conf-1',
         title: 'Comunicação oficial na Agência Brasil',
         description: 'Reportagem com declaração do ministério responsável detalhando os critérios públicos de distribuição.',
         quote: '“Os recursos serão distribuídos aos municípios conforme critérios técnicos, epidemiológicos e populacionais.”',
@@ -51,9 +66,33 @@ export const mockResults: Record<Classification, MockBase> = {
     summary: 'Parte da afirmação tem respaldo, mas faltam detalhes importantes.',
     explanation:
       'O fato principal aparece nas fontes consultadas, porém o status de tramitação e o alcance real não coincidem totalmente com o que foi afirmado. Falta contexto para uma conclusão completa.',
+    confidence: 'media',
+    confidenceExplanation:
+      'Evidências oficiais parciais: o trâmite legislativo foi localizado, mas a aprovação final em plenário ainda não ocorreu.',
+    claims: [
+      {
+        id: 'claim-parc-1',
+        text: 'Projeto de lei que altera regras de aposentadoria foi aprovado na Comissão de Constituição e Justiça.',
+        status: 'confirmada',
+        statusLabel: 'Parte confirmada',
+        evidenceIds: ['ev-parc-1'],
+      },
+      {
+        id: 'claim-parc-2',
+        text: 'A matéria já virou lei definitiva e passa a valer imediatamente para todos.',
+        status: 'contradita',
+        statusLabel: 'Sem respaldo legal',
+        evidenceIds: ['ev-parc-2'],
+      },
+    ],
+    limitations: [
+      'A tramitação legislativa no Congresso Nacional é dinâmica e sujeita a novas deliberações de pauta.',
+      'A análise reflete os registros do Portal da Câmara e do Senado disponíveis até a data da consulta.',
+    ],
     evidences: [
       {
         id: 'ev-parc-1',
+        claimId: 'claim-parc-1',
         title: 'Aprovação em Comissão Temática da Câmara',
         description: 'O projeto de lei realmente tramitou e recebeu parecer favorável na Comissão de Constituição e Justiça.',
         quote: 'Parecer do Relator aprovado por unanimidade na CCJC em 05/06/2024.',
@@ -65,6 +104,7 @@ export const mockResults: Record<Classification, MockBase> = {
       },
       {
         id: 'ev-parc-2',
+        claimId: 'claim-parc-2',
         title: 'Status atual: matéria ainda aguarda deliberação no Plenário',
         description: 'Ao contrário do que afirma a mensagem viral, a matéria ainda não é lei em vigor nem foi votada pelo plenário das duas Casas.',
         quote: 'Situação: Aguardando inclusão na Ordem do Dia do Plenário. Texto pendente de votação.',
@@ -82,9 +122,26 @@ export const mockResults: Record<Classification, MockBase> = {
     summary: 'Não encontramos fontes confiáveis que confirmem ou contradigam a afirmação.',
     explanation:
       'Nas fontes oficiais consultadas não há registros sobre o que foi informado. Isso não significa que seja falso: apenas não há evidências suficientes para uma conclusão. Procure fontes primárias antes de compartilhar.',
+    confidence: 'baixa',
+    confidenceExplanation:
+      'Registros oficiais insuficientes nos portais públicos federais e estaduais para embasar uma confirmação.',
+    claims: [
+      {
+        id: 'claim-sem-1',
+        text: 'Circula mensagem informando que determinado benefício social será suspenso para todos os inscritos.',
+        status: 'sem-evidencias',
+        statusLabel: 'Não registrado',
+        evidenceIds: ['ev-sem-1', 'ev-sem-2'],
+      },
+    ],
+    limitations: [
+      'A ausência de registros oficiais nos portais de transparência não permite validar a alegação neste momento.',
+      'Informações administrativas em fase preparatória interna podem não constar imediatamente nos sistemas públicos abertos.',
+    ],
     evidences: [
       {
         id: 'ev-sem-1',
+        claimId: 'claim-sem-1',
         title: 'Busca nos sistemas oficiais e atos normativos',
         description: 'Não foram localizadas portarias, notas técnicas ou comunicados referentes ao suposto cancelamento do benefício.',
         quote: 'Consulta aos termos nos sistemas oficiais do Poder Executivo em 2024 retornou zero registros correspondentes.',
@@ -96,6 +153,7 @@ export const mockResults: Record<Classification, MockBase> = {
       },
       {
         id: 'ev-sem-2',
+        claimId: 'claim-sem-1',
         title: 'Consulta a canais de transparência pública',
         description: 'Nenhum relatório de auditoria ou alerta institucional confirma a interrupção mencionada no conteúdo.',
         sourceName: 'Portal da Transparência',
@@ -110,9 +168,22 @@ export const mockResults: Record<Classification, MockBase> = {
     summary: 'As fontes consultadas apresentam informações diferentes do que foi afirmado.',
     explanation:
       'Os registros oficiais indicam dados incompatíveis com a afirmação analisada. Recomendamos consultar os documentos originais indicados abaixo. A plataforma não faz acusações: apenas apresenta as divergências encontradas.',
+    confidence: 'alta',
+    confidenceExplanation:
+      'Contrato administrativo publicado no Portal da Transparência e acórdão do Tribunal de Contas apresentam valores divergentes.',
+    claims: [
+      {
+        id: 'claim-contra-1',
+        text: 'O governo federal gastou R$ 2 bilhões na pavimentação da rodovia municipal em 2024.',
+        status: 'contradita',
+        statusLabel: 'Divergência factual',
+        evidenceIds: ['ev-contra-1', 'ev-contra-2'],
+      },
+    ],
     evidences: [
       {
         id: 'ev-contra-1',
+        claimId: 'claim-contra-1',
         title: 'Contrato Administrativo nº 48/2023 no Portal da Transparência',
         description: 'O valor oficial contratado para a obra é substancialmente menor do que o montante alegado na publicação.',
         allegedValue: 'R$ 2.000.000.000,00 (R$ 2 bilhões)',
@@ -126,6 +197,7 @@ export const mockResults: Record<Classification, MockBase> = {
       },
       {
         id: 'ev-contra-2',
+        claimId: 'claim-contra-1',
         title: 'Relatório de Auditoria do Tribunal de Contas da União',
         description: 'A fiscalização ordinária referente ao convênio não aponta os valores astronômicos citados no conteúdo analisado.',
         quote: 'Acórdão nº 1.205/2024-TCU-Plenário — Fiscalização concluída sem achados de valores divergentes dos termos pactuados.',
@@ -143,9 +215,26 @@ export const mockResults: Record<Classification, MockBase> = {
     summary: 'O caso é sensível ou complexo demais para uma conclusão automatizada.',
     explanation:
       'O conteúdo envolve informações que exigem interpretação jurídica ou documental especializada. Recomendamos buscar orientação de órgãos competentes ou de profissionais da área antes de tirar conclusões.',
+    confidence: 'media',
+    confidenceExplanation:
+      'Processo administrativo com manifestações divergentes entre órgãos de controle, sem trânsito em julgado.',
+    claims: [
+      {
+        id: 'claim-hum-1',
+        text: 'Houve irregularidade na contratação por dispensa de licitação do termo aditivo.',
+        status: 'analise-humana',
+        statusLabel: 'Controvérsia técnica',
+        evidenceIds: ['ev-humana-1'],
+      },
+    ],
+    limitations: [
+      'O processo administrativo possui recursos e prazos de resposta em andamento junto ao Tribunal de Contas.',
+      'Não há decisão terminativa ou trânsito em julgado sobre a matéria.',
+    ],
     evidences: [
       {
         id: 'ev-humana-1',
+        claimId: 'claim-hum-1',
         title: 'Pareceres jurídicos divergentes em processo de contratação',
         description: 'O processo administrativo possui manifestações divergentes entre órgãos de controle interno e externo sobre o alcance da regra de dispensa.',
         quote: 'Processo nº 08420.001924/2023 — Análise de dispensa de licitação com interpretações jurídicas concorrentes.',

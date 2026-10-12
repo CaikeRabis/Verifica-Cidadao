@@ -4,6 +4,10 @@ import { limitationsText } from '../data/content'
 import { ClassificationIcon } from './ClassificationBadge'
 import SourceCard from './SourceCard'
 import EvidenceList from './EvidenceList'
+import ClaimsSection from './ClaimsSection'
+import ConfidenceBadge from './ConfidenceBadge'
+import AnalysisLimitations from './AnalysisLimitations'
+import HumanAnalysisGuide from './HumanAnalysisGuide'
 import Button from './Button'
 import Icon from './Icon'
 
@@ -21,32 +25,49 @@ export default function ResultCard({ result, onNew }: Props) {
     <article className={`cl result cl--${result.classification}`} aria-labelledby="result-title">
       <header className="result__head">
         <ClassificationIcon value={result.classification} large />
-        <div>
+        <div className="result__head-info">
           <p className="result__label">Resultado da verificação</p>
           <h3 className="result__title" id="result-title">
             {meta.label}
           </h3>
         </div>
+        {result.confidence && (
+          <div className="result__head-confidence">
+            <ConfidenceBadge
+              level={result.confidence}
+              explanation={result.confidenceExplanation}
+            />
+          </div>
+        )}
       </header>
 
       <div className="result__body">
+        {/* 1. Afirmação analisada */}
         <section className="result__section">
           <h4>Afirmação analisada</h4>
           <p className="result__query">“{result.query}”</p>
         </section>
 
+        {/* 2. Resumo da análise */}
         <section className="result__section">
           <h4>Resumo da análise</h4>
           <p className="result__summary">{result.summary}</p>
         </section>
 
+        {/* 3. O que foi verificado (Claims identificadas) */}
+        {result.claims && result.claims.length > 0 && (
+          <ClaimsSection claims={result.claims} />
+        )}
+
+        {/* 4. Evidências encontradas */}
         {result.evidences && result.evidences.length > 0 && (
           <section className="result__section">
             <h4>Evidências encontradas</h4>
-            <EvidenceList evidences={result.evidences} />
+            <EvidenceList evidences={result.evidences} claims={result.claims} />
           </section>
         )}
 
+        {/* 5. Explicação e contexto */}
         <section className="result__section">
           <h4>Explicação e contexto</h4>
           <p>{result.explanation}</p>
@@ -54,6 +75,18 @@ export default function ResultCard({ result, onNew }: Props) {
             <strong>O que esta classificação significa:</strong> {meta.description}
           </p>
         </section>
+
+        {/* 6. Guia orientador para Necessita de análise humana */}
+        {result.classification === 'analise-humana' && (
+          <section className="result__section">
+            <HumanAnalysisGuide />
+          </section>
+        )}
+
+        {/* 7. Limitações específicas desta consulta */}
+        {result.limitations && result.limitations.length > 0 && (
+          <AnalysisLimitations limitations={result.limitations} />
+        )}
 
         <section className="result__section">
           <h4>Fontes consultadas</h4>

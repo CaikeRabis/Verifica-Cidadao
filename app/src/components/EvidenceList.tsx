@@ -1,12 +1,13 @@
-import type { Evidence } from '../types'
+import type { Claim, Evidence } from '../types'
 import { sources } from '../data/sources'
 import Icon from './Icon'
 
 interface Props {
   evidences?: Evidence[]
+  claims?: Claim[]
 }
 
-export default function EvidenceList({ evidences }: Props) {
+export default function EvidenceList({ evidences, claims }: Props) {
   if (!evidences || evidences.length === 0) {
     return null
   }
@@ -17,6 +18,10 @@ export default function EvidenceList({ evidences }: Props) {
         {evidences.map((ev, index) => {
           const matchedSource = ev.sourceId
             ? sources.find((s) => s.id === ev.sourceId)
+            : undefined
+
+          const matchedClaim = ev.claimId && claims
+            ? claims.find((c) => c.id === ev.claimId)
             : undefined
 
           const hasComparison = Boolean(ev.allegedValue && ev.foundValue)
@@ -41,6 +46,16 @@ export default function EvidenceList({ evidences }: Props) {
                   </span>
                 )}
               </header>
+
+              {/* Relação humana e didática com a afirmação verificada */}
+              {matchedClaim && (
+                <div className="evidence-card__claim-link">
+                  <span className="evidence-card__claim-label">
+                    <Icon name="check" size={14} /> Esta evidência ajuda a verificar:
+                  </span>
+                  <p className="evidence-card__claim-text">“{matchedClaim.text}”</p>
+                </div>
+              )}
 
               {ev.description && (
                 <p className="evidence-card__desc">{ev.description}</p>

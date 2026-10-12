@@ -6,7 +6,13 @@ import type { Classification } from '../types'
 import Button from './Button'
 import Icon from './Icon'
 import ResultCard from './ResultCard'
-import { EmptyState, ErrorState, LoadingState } from './States'
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  SourceUnavailableState,
+  UnsupportedFormatState,
+} from './States'
 
 type InputMode = 'text' | 'link' | 'file'
 
@@ -26,7 +32,7 @@ export default function Verifier() {
   const [mode, setMode] = useState<InputMode>('text')
   const [query, setQuery] = useState('')
   const [linkInput, setLinkInput] = useState('')
-  const { status, result, lastQuery, verify, reset } = useVerification()
+  const { status, result, lastQuery, unavailableSourceName, verify, reset } = useVerification()
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const areaRef = useRef<HTMLDivElement>(null)
@@ -289,6 +295,15 @@ export default function Verifier() {
             {loading && <LoadingState />}
             {status === 'success' && result && <ResultCard result={result} onNew={newCheck} />}
             {status === 'error' && <ErrorState onRetry={() => run(lastQuery)} />}
+            {status === 'source-unavailable' && (
+              <SourceUnavailableState
+                onRetry={() => run(lastQuery)}
+                sourceName={unavailableSourceName}
+              />
+            )}
+            {status === 'unsupported-format' && (
+              <UnsupportedFormatState onReset={newCheck} />
+            )}
             {isEmpty && <EmptyState onExample={() => useExample()} />}
           </div>
         )}
@@ -300,7 +315,7 @@ export default function Verifier() {
           <Icon name="flask" size={18} /> Modo demonstração com evidências simuladas
         </p>
         <p>
-          Simule cada uma das 5 classificações oficiais para avaliar a apresentação das evidências e fontes:
+          Simule cada uma das 5 classificações oficiais para avaliar a apresentação das afirmações, evidências e fontes:
         </p>
         <div className="chips">
           {classificationOrder.map((c) => (
@@ -315,6 +330,24 @@ export default function Verifier() {
               {classifications[c].short}
             </button>
           ))}
+          <button
+            type="button"
+            className="chip"
+            onClick={() => run(`${query.trim() || exampleQueries[0].query} #fonte-indisponivel`)}
+            disabled={loading}
+          >
+            <span className="chip__dot" style={{ background: '#e08a00' }} />
+            Fonte indisponível
+          </button>
+          <button
+            type="button"
+            className="chip"
+            onClick={() => run(`${query.trim() || exampleQueries[0].query} #formato-invalido`)}
+            disabled={loading}
+          >
+            <span className="chip__dot" style={{ background: '#718096' }} />
+            Formato não suportado
+          </button>
           <button
             type="button"
             className="chip"

@@ -14,6 +14,26 @@ export interface Source {
   url: string
 }
 
+/** Afirmação verificável identificada a partir do texto original. */
+export type ClaimStatus =
+  | 'confirmada'
+  | 'parcialmente-confirmada'
+  | 'sem-evidencias'
+  | 'contradita'
+  | 'analise-humana'
+  | 'verificada'
+
+export interface Claim {
+  id: string
+  text: string
+  status?: ClaimStatus
+  statusLabel?: string
+  evidenceIds?: string[] // IDs das evidências que sustentam ou contradizem esta afirmação
+}
+
+/** Grau de robustez das evidências (não é probabilidade matemática). */
+export type ConfidenceLevel = 'alta' | 'media' | 'baixa'
+
 export interface Evidence {
   id: string
   title: string
@@ -22,6 +42,7 @@ export interface Evidence {
   sourceName?: string
   sourceId?: string
   sourceUrl?: string
+  claimId?: string // Vincula esta evidência à afirmação correspondente
   date?: string
   foundValue?: string
   allegedValue?: string
@@ -35,7 +56,11 @@ export interface VerificationResult {
   classification: Classification
   summary: string
   explanation: string
-  evidences?: Evidence[]
+  claims?: Claim[] // Afirmações verificáveis identificadas
+  confidence?: ConfidenceLevel // Grau de robustez das evidências
+  confidenceExplanation?: string // Explicação do indicador de robustez
+  limitations?: string[] // Limitações específicas desta consulta
+  evidences?: Evidence[] // Evidências estruturadas
   sources: Source[]
   analyzedAt: string // ISO
 }
@@ -61,4 +86,12 @@ export interface EducationTopic {
   duration: string
 }
 
-export type VerifyStatus = 'idle' | 'loading' | 'success' | 'error' | 'empty'
+export type VerifyStatus =
+  | 'idle'
+  | 'loading'
+  | 'success'
+  | 'error'
+  | 'empty'
+  | 'source-unavailable'
+  | 'unsupported-format'
+

@@ -1,11 +1,16 @@
 import { useCallback, useRef, useState } from 'react'
-import { verifyInformation } from '../services/verificationService'
+import {
+  verifyInformation,
+  SourceUnavailableError,
+  UnsupportedFormatError,
+} from '../services/verificationService'
 import type { Classification, VerificationResult, VerifyStatus } from '../types'
 
 export function useVerification() {
   const [status, setStatus] = useState<VerifyStatus>('idle')
   const [result, setResult] = useState<VerificationResult | null>(null)
   const [lastQuery, setLastQuery] = useState('')
+  const [unavailableSourceName, setUnavailableSourceName] = useState('Portal da Transparência')
   const runId = useRef(0)
 
   const verify = useCallback(async (query: string, forced?: Classification) => {
@@ -24,9 +29,16 @@ export function useVerification() {
       if (id !== runId.current) return
       setResult(res)
       setStatus('success')
-    } catch {
+    } catch (err) {
       if (id !== runId.current) return
-      setStatus('error')
+      if (err instanceof SourceUnavailableError) {
+        setUnavailableSourceName(err.sourceName)
+        setStatus('source-unavailable')
+      } else if (err instanceof UnsupportedFormatError) {
+        setStatus('unsupported-format')
+      } else {
+        setStatus('error')
+      }
     }
   }, [])
 
@@ -36,5 +48,6 @@ export function useVerification() {
     setResult(null)
   }, [])
 
-  return { status, result, lastQuery, verify, reset }
+  return { status, result, lastQuery, unavailableSourceName, verify, reset }
 }
+
