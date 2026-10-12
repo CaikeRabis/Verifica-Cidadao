@@ -14,12 +14,28 @@ export interface Source {
   url: string
 }
 
+export interface Evidence {
+  id: string
+  title: string
+  description?: string
+  quote?: string
+  sourceName?: string
+  sourceId?: string
+  sourceUrl?: string
+  date?: string
+  foundValue?: string
+  allegedValue?: string
+  context?: string
+  badge?: string
+}
+
 export interface VerificationResult {
   id: string
   query: string
   classification: Classification
   summary: string
   explanation: string
+  evidences?: Evidence[]
   sources: Source[]
   analyzedAt: string // ISO
 }

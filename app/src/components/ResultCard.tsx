@@ -3,6 +3,7 @@ import { classifications } from '../data/classifications'
 import { limitationsText } from '../data/content'
 import { ClassificationIcon } from './ClassificationBadge'
 import SourceCard from './SourceCard'
+import EvidenceList from './EvidenceList'
 import Button from './Button'
 import Icon from './Icon'
 
@@ -30,7 +31,7 @@ export default function ResultCard({ result, onNew }: Props) {
 
       <div className="result__body">
         <section className="result__section">
-          <h4>Informação analisada</h4>
+          <h4>Afirmação analisada</h4>
           <p className="result__query">“{result.query}”</p>
         </section>
 
@@ -39,8 +40,15 @@ export default function ResultCard({ result, onNew }: Props) {
           <p className="result__summary">{result.summary}</p>
         </section>
 
+        {result.evidences && result.evidences.length > 0 && (
+          <section className="result__section">
+            <h4>Evidências encontradas</h4>
+            <EvidenceList evidences={result.evidences} />
+          </section>
+        )}
+
         <section className="result__section">
-          <h4>Explicação</h4>
+          <h4>Explicação e contexto</h4>
           <p>{result.explanation}</p>
           <p style={{ marginTop: 8, fontSize: '0.92rem' }}>
             <strong>O que esta classificação significa:</strong> {meta.description}
