@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Verifica Cidadão — Em construção</title>
+  <meta name="description" content="O Verifica Cidadão está em construção. Uma plataforma de cidadania digital que une Inteligência Artificial, Transparência Pública e Educação Cidadã para ajudar você a verificar informações." />
+  <meta name="theme-color" content="#0b4ea2" />
+  <link rel="icon" type="image/png" href="assets/favicon.png" />
+  <link rel="apple-touch-icon" href="assets/favicon.png" />
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Verifica Cidadão — Em construção" />
+  <meta property="og:description" content="Antes de acreditar. Antes de compartilhar. Verifique. Em breve, uma nova plataforma de cidadania digital." />
+  <meta property="og:image" content="assets/logo.png" />
+  <meta property="og:locale" content="pt_BR" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Montserrat:wght@600;700;800&display=swap" rel="stylesheet" />
+
+  <style>
+    :root {
+      --vc-blue: #0b4ea2;
+      --vc-blue-deep: #083a7a;
+      --vc-blue-50: #eef4fc;
+      --vc-green: #19a866;
+      --vc-green-700: #107a49;
+      --vc-yellow: #f3ca31;
+      --vc-graphite: #404a57;
+      --vc-border: #d9e0e9;
+      --font-title: 'Montserrat', system-ui, sans-serif;
+      --font-body: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+      --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body { height: 100%; }
+
+    body {
+      font-family: var(--font-body);
+      color: var(--vc-graphite);
+      background: #f7f9fc;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+
+    /* ---------- Fundo ---------- */
+    .bg {
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      overflow: hidden;
+      background:
+        radial-gradient(1200px 600px at 50% -10%, #ffffff 0%, rgba(255,255,255,0) 70%),
+        linear-gradient(180deg, #f7f9fc 0%, #eef4fc 100%);
+    }
+    .bg::after {
+      /* grade sutil */
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(11,78,162,0.045) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(11,78,162,0.045) 1px, transparent 1px);
+      background-size: 44px 44px;
+      mask-image: radial-gradient(ellipse at center, #000 30%, transparent 75%);
+      -webkit-mask-image: radial-gradient(ellipse at center, #000 30%, transparent 75%);
+    }
+    .blob {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(70px);
+      opacity: 0.35;
+      animation: drift 18s var(--ease) infinite alternate;
+    }
+    .blob.blue   { width: 460px; height: 460px; background: var(--vc-blue);   top: -120px; left: -140px; }
+    .blob.green  { width: 380px; height: 380px; background: var(--vc-green);  bottom: -120px; right: -100px; animation-delay: -6s; }
+    .blob.yellow { width: 260px; height: 260px; background: var(--vc-yellow); top: 40%; right: 12%; opacity: 0.22; animation-delay: -11s; }
+
+    @keyframes drift {
+      0%   { transform: translate(0, 0) scale(1); }
+      100% { transform: translate(40px, 30px) scale(1.08); }
+    }
+
+    /* ---------- Layout ---------- */
+    .page {
+      min-height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 48px 20px 32px;
+    }
+
+    .card {
+      width: 100%;
+      max-width: 720px;
+      text-align: center;
+      padding: 48px 40px 40px;
+      border-radius: 28px;
+      background: rgba(255, 255, 255, 0.72);
+      backdrop-filter: blur(18px) saturate(140%);
+      -webkit-backdrop-filter: blur(18px) saturate(140%);
+      border: 1px solid rgba(255, 255, 255, 0.9);
+      box-shadow:
+        0 1px 2px rgba(11,78,162,0.06),
+        0 24px 64px rgba(11,78,162,0.14);
+      animation: rise 0.9s var(--ease) both;
+    }
+
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(18px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .logo {
+      width: 220px;
+      max-width: 60%;
+      height: auto;
+      display: block;
+      margin: 0 auto 28px;
+      animation: float 6s ease-in-out infinite;
+      filter: drop-shadow(0 12px 22px rgba(11,78,162,0.14));
+    }
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50%      { transform: translateY(-8px); }
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 16px;
+      border-radius: 999px;
+      background: #fef8e1;
+      color: #8a6a00;
+      border: 1px solid rgba(243, 202, 49, 0.55);
+      font-size: 0.82rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      margin-bottom: 22px;
+    }
+    .status .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--vc-yellow);
+      box-shadow: 0 0 0 0 rgba(243, 202, 49, 0.7);
+      animation: pulse 1.8s ease-out infinite;
+    }
+    @keyframes pulse {
+      0%   { box-shadow: 0 0 0 0 rgba(243, 202, 49, 0.7); }
+      100% { box-shadow: 0 0 0 10px rgba(243, 202, 49, 0); }
+    }
+
+    h1 {
+      font-family: var(--font-title);
+      font-weight: 800;
+      font-size: clamp(1.7rem, 4.2vw, 2.5rem);
+      line-height: 1.15;
+      color: var(--vc-blue-deep);
+      letter-spacing: -0.01em;
+      margin-bottom: 16px;
+    }
+    h1 .accent {
+      background: linear-gradient(90deg, var(--vc-blue) 0%, var(--vc-green) 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+
+    .lead {
+      font-size: 1.05rem;
+      line-height: 1.65;
+      max-width: 540px;
+      margin: 0 auto 32px;
+    }
+
+    /* ---------- Progresso ---------- */
+    .progress {
+      max-width: 420px;
+      margin: 0 auto 36px;
+      text-align: left;
+    }
+    .progress-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--vc-graphite);
+      margin-bottom: 8px;
+    }
+    .progress-track {
+      height: 8px;
+      border-radius: 999px;
+      background: #e9edf2;
+      overflow: hidden;
+    }
+    .progress-bar {
+      height: 100%;
+      width: 0;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--vc-blue), var(--vc-green));
+      position: relative;
+      animation: fill 1.6s 0.4s var(--ease) forwards;
+    }
+    .progress-bar::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.55), transparent);
+      transform: translateX(-100%);
+      animation: shimmer 2.4s 2s ease-in-out infinite;
+    }
+    @keyframes fill    { to { width: 35%; } }
+    @keyframes shimmer { to { transform: translateX(100%); } }
+
+    /* ---------- Pilares ---------- */
+    .pillars {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin-bottom: 32px;
+    }
+    .pillar {
+      padding: 20px 14px;
+      border-radius: 18px;
+      background: #ffffff;
+      border: 1px solid var(--vc-border);
+      transition: transform 0.3s var(--ease), box-shadow 0.3s var(--ease), border-color 0.3s;
+      animation: rise 0.8s var(--ease) both;
+    }
+    .pillar:nth-child(1) { animation-delay: 0.25s; }
+    .pillar:nth-child(2) { animation-delay: 0.35s; }
+    .pillar:nth-child(3) { animation-delay: 0.45s; }
+    .pillar:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 14px 30px rgba(11,78,162,0.12);
+      border-color: transparent;
+    }
+    .pillar .icon {
+      width: 44px; height: 44px;
+      margin: 0 auto 12px;
+      border-radius: 14px;
+      display: grid;
+      place-items: center;
+    }
+    .pillar .icon svg { width: 22px; height: 22px; }
+    .pillar.ia   .icon { background: #eef4fc; color: var(--vc-blue); }
+    .pillar.tp   .icon { background: #e8f7f0; color: var(--vc-green-700); }
+    .pillar.ed   .icon { background: #fef8e1; color: #8a6a00; }
+    .pillar h2 {
+      font-family: var(--font-title);
+      font-size: 0.92rem;
+      font-weight: 700;
+      color: var(--vc-blue-deep);
+      margin-bottom: 4px;
+    }
+    .pillar p {
+      font-size: 0.8rem;
+      line-height: 1.45;
+    }
+
+    .slogan {
+      font-family: var(--font-title);
+      font-weight: 600;
+      font-size: 0.95rem;
+      color: var(--vc-graphite);
+      padding-top: 24px;
+      border-top: 1px solid var(--vc-border);
+    }
+    .slogan strong { color: var(--vc-blue); font-weight: 800; }
+
+    footer {
+      margin-top: 28px;
+      font-size: 0.78rem;
+      color: #6b7684;
+      text-align: center;
+    }
+
+    /* ---------- Responsivo ---------- */
+    @media (max-width: 640px) {
+      .card { padding: 36px 22px 28px; border-radius: 22px; }
+      .pillars { grid-template-columns: 1fr; }
+      .pillar { display: flex; align-items: center; gap: 14px; text-align: left; padding: 14px 16px; }
+      .pillar .icon { margin: 0; flex-shrink: 0; }
+      .logo { width: 170px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition: none !important; }
+      .progress-bar { width: 35%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="bg" aria-hidden="true">
+    <span class="blob blue"></span>
+    <span class="blob green"></span>
+    <span class="blob yellow"></span>
+  </div>
+
+  <main class="page">
+    <section class="card" aria-labelledby="titulo">
+      <img class="logo" src="assets/logo.png" alt="Verifica Cidadão" width="640" height="571" />
+
+      <span class="status" role="status">
+        <span class="dot" aria-hidden="true"></span>
+        Plataforma em construção
+      </span>
+
+      <h1 id="titulo">Estamos construindo algo <span class="accent">importante para você</span></h1>
+
+      <p class="lead">
+        O Verifica Cidadão é uma plataforma de cidadania digital que vai ajudar você a
+        verificar informações, entender evidências e acessar fontes públicas confiáveis.
+        Em breve, por aqui.
+      </p>
+
+      <div class="progress" aria-label="Andamento do projeto">
+        <div class="progress-label">
+          <span>Desenvolvimento</span>
+          <span>Em andamento</span>
+        </div>
+        <div class="progress-track"><div class="progress-bar"></div></div>
+      </div>
+
+      <div class="pillars">
+        <article class="pillar ia">
+          <div class="icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h6v6H9z"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg>
+          </div>
+          <div>
+            <h2>Inteligência Artificial</h2>
+            <p>Apoio na análise de informações e evidências.</p>
+          </div>
+        </article>
+        <article class="pillar tp">
+          <div class="icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V10M9 21V10M15 21V10M19 21V10"/><path d="M2 10l10-6 10 6"/></svg>
+          </div>
+          <div>
+            <h2>Transparência Pública</h2>
+            <p>Acesso direto a fontes oficiais e dados abertos.</p>
+          </div>
+        </article>
+        <article class="pillar ed">
+          <div class="icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10L12 5 2 10l10 5 10-5z"/><path d="M6 12v5c0 1.5 2.7 3 6 3s6-1.5 6-3v-5"/></svg>
+          </div>
+          <div>
+            <h2>Educação Cidadã</h2>
+            <p>Conteúdos para pensar criticamente antes de compartilhar.</p>
+          </div>
+        </article>
+      </div>
+
+      <p class="slogan">Antes de acreditar. Antes de compartilhar. <strong>Verifique.</strong></p>
+    </section>
+
+    <footer>
+      &copy; <span id="ano">2026</span> Verifica Cidadão. Todos os direitos reservados.
+    </footer>
+  </main>
+
+  <script>
+    document.getElementById('ano').textContent = new Date().getFullYear();
+  </script>
+</body>
+</html>

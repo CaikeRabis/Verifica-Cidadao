@@ -1,0 +1,59 @@
+/* Design tokens — Manual da Marca Verifica Cidadão */
+:root {
+  /* Cores oficiais */
+  --vc-blue: #0b4ea2;
+  --vc-blue-support: #1c73d1;
+  --vc-green: #19a866;
+  --vc-yellow: #f3ca31;
+  --vc-graphite: #404a57;
+  --vc-gray-light: #e9edf2;
+  --vc-white: #ffffff;
+
+  /* Derivações tonais (mesmas matizes, para fundos e contraste) */
+  --vc-blue-deep: #083a7a;
+  --vc-blue-50: #eef4fc;
+  --vc-blue-100: #dbe8f8;
+  --vc-green-700: #107a49;
+  --vc-green-50: #e8f7f0;
+  --vc-yellow-50: #fef8e1;
+  --vc-yellow-700: #8a6a00;
+  --vc-gray-50: #f5f7fa;
+  --vc-border: #d9e0e9;
+
+  /* Cores semânticas das classificações (manual, pág. 5) */
+  --cl-confirmada: var(--vc-green);
+  --cl-parcial: var(--vc-yellow);
+  --cl-sem-evidencias: #ee8a2a;
+  --cl-contradita: #d93a2f;
+  --cl-humana: var(--vc-graphite);
+
+  /* Tipografia */
+  --font-title: 'Montserrat', system-ui, sans-serif;
+  --font-body: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  /* Espaçamento */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-7: 48px;
+  --sp-8: 72px;
+  --sp-9: 104px;
+
+  /* Raios (cantos arredondados da marca) */
+  --r-sm: 10px;
+  --r-md: 16px;
+  --r-lg: 24px;
+  --r-pill: 999px;
+
+  /* Sombras suaves */
+  --shadow-sm: 0 1px 2px rgba(11, 78, 162, 0.06), 0 2px 8px rgba(11, 78, 162, 0.05);
+  --shadow-md: 0 8px 28px rgba(11, 78, 162, 0.1);
+  --shadow-lg: 0 18px 48px rgba(11, 78, 162, 0.16);
+
+  --container: 1160px;
+  --header-h: 76px;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+}

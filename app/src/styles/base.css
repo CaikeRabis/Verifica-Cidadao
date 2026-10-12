@@ -1,0 +1,143 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--vc-graphite);
+  background: var(--vc-white);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-title);
+  font-weight: 700;
+  color: var(--vc-blue-deep);
+  line-height: 1.15;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+h1 { font-size: clamp(2.1rem, 5vw, 3.4rem); }
+h2 { font-size: clamp(1.6rem, 3.2vw, 2.25rem); }
+h3 { font-size: 1.15rem; }
+
+p { margin: 0; }
+
+a {
+  color: var(--vc-blue);
+  text-decoration: none;
+}
+
+img { max-width: 100%; display: block; }
+
+button,
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button { cursor: pointer; }
+
+ul { margin: 0; padding: 0; list-style: none; }
+
+/* Acessibilidade */
+:focus-visible {
+  outline: 3px solid var(--vc-blue-support);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+.skip-link {
+  position: absolute;
+  left: 12px;
+  top: -60px;
+  background: var(--vc-blue);
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: var(--r-sm);
+  z-index: 200;
+  transition: top 0.2s var(--ease);
+}
+.skip-link:focus { top: 12px; }
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Utilitários de layout */
+.container {
+  width: 100%;
+  max-width: var(--container);
+  margin: 0 auto;
+  padding: 0 var(--sp-5);
+}
+
+.section { padding: var(--sp-8) 0; }
+.section--tint { background: var(--vc-gray-50); }
+
+.section-head {
+  max-width: 640px;
+  margin-bottom: var(--sp-6);
+}
+.section-head--center { margin-left: auto; margin-right: auto; text-align: center; }
+.section-head p { margin-top: var(--sp-3); font-size: 1.05rem; }
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-title);
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--vc-blue-support);
+  margin-bottom: var(--sp-3);
+}
+
+/* Barra tricolor da marca */
+.tricolor {
+  display: inline-flex;
+  height: 4px;
+  width: 64px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.tricolor i { flex: 1; }
+.tricolor i:nth-child(1) { background: var(--vc-blue-support); }
+.tricolor i:nth-child(2) { background: var(--vc-yellow); }
+.tricolor i:nth-child(3) { background: var(--vc-green); }
+
+@media (max-width: 720px) {
+  .section { padding: var(--sp-7) 0; }
+  .container { padding: 0 var(--sp-4); }
+}

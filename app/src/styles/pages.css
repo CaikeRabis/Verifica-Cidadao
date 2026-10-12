@@ -1,0 +1,82 @@
+/* Layout geral e páginas */
+#root { min-height: 100vh; display: flex; flex-direction: column; }
+main { flex: 1; }
+
+/* ---------- Hero ---------- */
+.hero { position: relative; overflow: hidden; padding: var(--sp-8) 0 var(--sp-7); background: linear-gradient(160deg, var(--vc-blue-50) 0%, #fff 62%); }
+.hero::before {
+  content: '';
+  position: absolute;
+  width: 420px;
+  height: 420px;
+  border-radius: 90px;
+  transform: rotate(35deg);
+  background: var(--vc-yellow);
+  opacity: 0.18;
+  right: -140px;
+  top: -190px;
+}
+.hero::after {
+  content: '';
+  position: absolute;
+  width: 340px;
+  height: 340px;
+  border-radius: 80px;
+  transform: rotate(35deg);
+  background: var(--vc-green);
+  opacity: 0.13;
+  left: -160px;
+  bottom: -190px;
+}
+.hero .container { position: relative; z-index: 1; }
+.hero__grid { display: grid; grid-template-columns: 1.25fr 0.75fr; gap: var(--sp-7); align-items: center; }
+.hero__title { display: block; }
+.hero__title span { display: block; }
+.hero__title .hl { color: var(--vc-green); }
+.hero__lead { margin: var(--sp-4) 0 var(--sp-6); font-size: 1.15rem; max-width: 560px; }
+.hero__art { display: grid; place-items: center; }
+.hero__art img { width: min(100%, 340px); filter: drop-shadow(0 20px 40px rgba(11, 78, 162, 0.18)); animation: float 6s ease-in-out infinite; }
+.hero__search { margin-top: var(--sp-2); }
+.hero__trust { display: flex; gap: var(--sp-5); flex-wrap: wrap; margin-top: var(--sp-5); font-size: 0.9rem; font-weight: 500; }
+.hero__trust span { display: inline-flex; align-items: center; gap: 8px; }
+.hero__trust svg { color: var(--vc-green); }
+
+@keyframes float { 50% { transform: translateY(-10px); } }
+
+@media (max-width: 880px) {
+  .hero { padding: var(--sp-6) 0; }
+  .hero__grid { grid-template-columns: 1fr; }
+  .hero__art { display: none; }
+}
+
+/* Área de resultado */
+.verify-area { padding: var(--sp-6) 0 var(--sp-7); }
+.verify-area .container { max-width: 880px; }
+.demo-panel { margin-top: var(--sp-5); padding: var(--sp-4) var(--sp-5); background: var(--vc-gray-50); border: 1px dashed #b9c6d6; border-radius: var(--r-md); }
+.demo-panel__title { font-weight: 600; font-size: 0.9rem; color: var(--vc-blue-deep); display: flex; align-items: center; gap: 8px; }
+.demo-panel p { font-size: 0.85rem; margin-top: 4px; }
+
+/* Mostruário de classificações */
+.cl-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--sp-3); }
+.cl-card { padding: var(--sp-5) var(--sp-4); background: var(--cl-bg); border-radius: var(--r-lg); text-align: center; display: flex; flex-direction: column; align-items: center; gap: var(--sp-3); border: 1px solid transparent; transition: transform 0.18s var(--ease), border-color 0.18s; }
+.cl-card:hover { transform: translateY(-3px); border-color: var(--cl-color); }
+.cl-card h3 { color: var(--cl-ink); font-size: 1rem; }
+.cl-card p { font-size: 0.88rem; }
+@media (max-width: 1000px) { .cl-grid { grid-template-columns: repeat(2, 1fr); } .cl-card:last-child { grid-column: 1 / -1; } }
+@media (max-width: 520px) { .cl-grid { grid-template-columns: 1fr; } }
+
+.cta-band { text-align: center; padding: var(--sp-7) var(--sp-5); background: linear-gradient(135deg, var(--vc-blue), var(--vc-blue-support)); border-radius: var(--r-lg); color: #fff; }
+.cta-band h2 { color: #fff; }
+.cta-band p { margin: var(--sp-3) auto var(--sp-5); max-width: 520px; opacity: 0.92; }
+.cta-band .btn--primary { background: var(--vc-yellow); color: var(--vc-blue-deep); box-shadow: none; }
+.cta-band .btn--primary:hover { background: #ffd94d; color: var(--vc-blue-deep); }
+
+.principle-wrap { padding: 0 0 var(--sp-8); }
+.prose { max-width: 720px; display: grid; gap: var(--sp-4); }
+.prose h2 { margin-top: var(--sp-4); }
+.prose ul { display: grid; gap: 8px; padding-left: 0; }
+.prose li { position: relative; padding-left: 26px; }
+.prose li::before { content: ''; position: absolute; left: 4px; top: 0.55em; width: 10px; height: 10px; border-radius: 3px; background: var(--vc-green); }
+
+.not-found { text-align: center; padding: var(--sp-9) 0; }
+.not-found .state__icon { margin: 0 auto var(--sp-4); }
