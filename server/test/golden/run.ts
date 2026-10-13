@@ -50,9 +50,28 @@ function directionsFor(test: GoldenCase, count: number): Direction[] {
   return Array.from({ length: count }, () => test.expectedEvidenceDirection ?? 'none')
 }
 
+/** Valores documentais das fixtures quando a fonte contradiz uma alegação estruturada. */
+function evidenceText(test: GoldenCase, claim: string, index: number, direction: Direction): string {
+  if (direction !== 'contradicts') return claim
+  const replacements: Record<string, string | undefined> = {
+    g006: claim.replace('1989', '1988'),
+    g007: claim.replace('5.000', '1.412'),
+    g008: claim.replace('15 ministros', '11 ministros'),
+    g009: claim.replace('600 deputados', '513 deputados'),
+    g010: claim.replace('2020', '2022'),
+    g011: index === 1 ? claim.replace('28', '26') : undefined,
+    g013: index === 1 ? claim.replace('250 milhões', '203 milhões') : undefined,
+    g015: index === 1 ? claim.replace('60 anos', '70 anos') : undefined,
+    g023: index === 0 ? claim.replace('5.000', '1.412') : undefined,
+    g024: index === 1 ? claim.replace('15 ministros', '11 ministros') : undefined,
+  }
+  return replacements[test.id] ?? claim
+}
+
 function createDeps(test: GoldenCase) {
   const claims = [test.expectedPrimaryClaim, ...(test.expectedSecondaryClaims ?? [])]
   const directions = directionsFor(test, claims.length)
+  const evidenceTexts = claims.map((claim, index) => evidenceText(test, claim, index, directions[index] ?? 'none'))
   const candidates: SearchResult[] = test.scenario === 'conflicting-evidence'
     ? [
         { title: 'Fonte oficial A', url: 'https://dados.gov.br/a', domain: 'dados.gov.br', snippet: 'registro institucional' },
@@ -75,7 +94,7 @@ function createDeps(test: GoldenCase) {
             evidence.push({
               claimId: `c${index + 1}`,
               sourceId: source.id,
-              quote: sourceIndex === 0 ? `Registro institucional: ${claims[index]}` : `Registro institucional divergente: ${claims[index]}`,
+              quote: sourceIndex === 0 ? `Registro institucional: ${evidenceTexts[index]}` : `Registro institucional divergente: ${evidenceTexts[index]}`,
               context: 'Fontes institucionais apresentam registros incompatíveis.',
               stance: sourceIndex === 0 ? 'supports' : 'contradicts',
             })
@@ -86,7 +105,7 @@ function createDeps(test: GoldenCase) {
         evidence.push({
           claimId: `c${index + 1}`,
           sourceId: source.id,
-          quote: `Registro institucional: ${claims[index]}`,
+          quote: `Registro institucional: ${evidenceTexts[index]}`,
           context: 'Trecho institucional relacionado à afirmação analisada.',
           stance: direction as Stance,
         })
@@ -97,12 +116,12 @@ function createDeps(test: GoldenCase) {
   const fetcher = async (url: string) => {
     if (test.scenario === 'no-readable-source') throw new Error('Fonte indisponível na fixture')
     const alternative = url.endsWith('/b')
-      ? `Registro institucional divergente: ${claims[0]}`
+      ? `Registro institucional divergente: ${evidenceTexts[0]}`
       : ''
     return {
       finalUrl: url,
       contentType: 'text/html',
-      body: `<title>Referência institucional</title><article>${claims.map((claim) => `Registro institucional: ${claim}.`).join(' ')} ${alternative} ${'Informação pública para verificação. '.repeat(12)}</article>`,
+      body: `<title>Referência institucional</title><article>${evidenceTexts.map((claim) => `Registro institucional: ${claim}.`).join(' ')} ${alternative} ${'Informação pública para verificação. '.repeat(12)}</article>`,
       truncated: false,
     }
   }

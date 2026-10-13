@@ -3,7 +3,7 @@ import { TIER_WEIGHT } from '../lib/sourceRanking'
 import type { Claim, Classification, ConfidenceLevel, ValidEvidence } from '../types'
 
 /**
- * Regras de classificação v0.2.0 — centralizadas aqui para evoluir depois.
+ * Regras de classificação v0.2.1 — centralizadas aqui para evoluir depois.
  * A IA só informa a relação de cada trecho (supports/contradicts/...);
  * quem decide a classificação são ESTAS regras determinísticas.
  */

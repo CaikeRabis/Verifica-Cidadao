@@ -1,5 +1,6 @@
 import { guardText } from '../lib/languageSafety'
 import { extractKeywords } from '../lib/queryGeneration'
+import { compareFactualClaim } from '../lib/factualComparison'
 import type { Claim, RawEvidence, SourceDoc, ValidEvidence } from '../types'
 
 const norm = (s: string) =>
@@ -49,7 +50,10 @@ export function validateEvidences(raw: RawEvidence[], claims: Claim[], sources: 
       discarded++
       continue
     }
-    if (e.stance === 'insufficient') continue // lida, mas irrelevante: não é exibida como evidência
+    const claim = claims.find((c) => c.id === e.claimId)!
+    const factual = compareFactualClaim(claim.text, e.quote)
+    const stance = factual?.stance ?? e.stance
+    if (stance === 'insufficient') continue // lida, mas irrelevante: não é exibida como evidência
     const key = `${e.claimId}|${e.sourceId}|${norm(e.quote)}`
     if (seen.has(key) || (perClaim.get(e.claimId) ?? 0) >= 4) continue
     seen.add(key)
@@ -60,11 +64,13 @@ export function validateEvidences(raw: RawEvidence[], claims: Claim[], sources: 
     const context = e.context ? guardText(e.context, 'Trecho da fonte relacionado à afirmação analisada.').text : ''
     valid.push({
       ...e,
+      stance,
       context,
       foundValue: inText(e.foundValue),
-      allegedValue: e.allegedValue && norm(claims.find((c) => c.id === e.claimId)!.text).includes(norm(e.allegedValue)) ? e.allegedValue : undefined,
+      allegedValue: e.allegedValue && norm(claim.text).includes(norm(e.allegedValue)) ? e.allegedValue : undefined,
       id: `e${valid.length + 1}`,
       tier: source!.tier,
+      stanceSource: factual ? 'deterministic' : 'ai',
     })
   }
 

@@ -323,7 +323,7 @@ describe('6. Regras v0.2 de classificação e agregação', () => {
     const claim: Claim = { id: 'c1', text: 'O salário mínimo em 2024 foi R$ 5.000.', role: 'primary' }
     const out = classify({ claims: [claim], evidences: [evidence('c1', 'supports')] })
     assert.equal(out.classification, 'confirmada')
-    // A regra ainda não compara R$ 5.000 com o valor literal da fonte: esse é escopo da v0.2-2.
+    // A classificação isolada recebe stances já validados; a comparação literal ocorre em evidenceValidation.
   })
 })
 

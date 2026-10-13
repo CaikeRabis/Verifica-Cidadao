@@ -11,6 +11,7 @@ export type ConfidenceLevel = 'alta' | 'media' | 'baixa'
 export type ReadStatus = 'read' | 'snippet-only' | 'unavailable'
 export type SourceTier = 'oficial' | 'jornalismo' | 'outro'
 export type Stance = 'supports' | 'contradicts' | 'insufficient' | 'unclear'
+export type StanceSource = 'ai' | 'deterministic'
 export type ClaimRole = 'primary' | 'secondary'
 
 export interface SearchResult {
@@ -58,6 +59,8 @@ export interface RawEvidence {
 export interface ValidEvidence extends RawEvidence {
   id: string
   tier: SourceTier
+  /** Proveniência interna do stance; não exposta ao frontend nesta versão. */
+  stanceSource?: StanceSource
 }
 
 // ---------- Contrato de resposta (compatível com o front) ----------
