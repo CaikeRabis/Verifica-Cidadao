@@ -1,6 +1,6 @@
 import { isSensitiveClaim } from '../lib/languageSafety'
 import { TIER_WEIGHT } from '../lib/sourceRanking'
-import type { Claim, Classification, ConfidenceLevel, ValidEvidence } from '../types'
+import type { Claim, Classification, ConfidenceLevel, SourceDoc, ValidEvidence } from '../types'
 
 /**
  * Regras de classificação v0.2.1 — centralizadas aqui para evoluir depois.
@@ -11,6 +11,8 @@ import type { Claim, Classification, ConfidenceLevel, ValidEvidence } from '../t
 export interface ClassifyInput {
   claims: Claim[]
   evidences: ValidEvidence[]
+  /** Fontes selecionadas, para avaliar leitura e independência de domínio. */
+  sources?: SourceDoc[]
   /** Nenhuma fonte pôde ser lida (falha importante do pipeline). */
   noSourcesRead?: boolean
 }
@@ -103,23 +105,31 @@ export function classify(input: ClassifyInput): ClassifyOutput {
 
   // ---- Robustez ----
   const decisiveEv = evidences.filter((e) => e.stance === 'supports' || e.stance === 'contradicts')
-  const hasOfficial = decisiveEv.some((e) => e.tier === 'oficial')
-  const domains = new Set(decisiveEv.map((e) => e.sourceId)).size
+  const primaryEvidence = decisiveEv.filter((e) => e.claimId === claims[primaryIndex].id)
+  const primaryCovered = primaryEvidence.length > 0
+  const hasOfficial = primaryEvidence.some((e) => e.tier === 'oficial')
+  const byId = new Map((input.sources ?? []).map((source) => [source.id, source]))
+  const domains = new Set(primaryEvidence.map((e) => byId.get(e.sourceId)?.domain ?? e.sourceId)).size
+  const readSources = input.sources?.filter((source) => source.readStatus === 'read') ?? []
+  const technicalLimitation = (input.sources?.some((source) => source.readStatus !== 'read') ?? false)
   const opposing = evidences.some((e) => e.stance === 'supports') && evidences.some((e) => e.stance === 'contradicts')
 
   let confidence: ConfidenceLevel
   if (classification === 'sem-evidencias') {
     confidence = 'baixa'
+  } else if (!primaryCovered) {
+    confidence = 'baixa'
   } else if (classification === 'parcialmente-confirmada') {
     confidence = hasOfficial || domains >= 2 ? 'media' : 'baixa'
   } else {
-    confidence = (hasOfficial || domains >= 2) && !opposing ? 'alta' : 'media'
+    const hasReadableBasis = input.sources === undefined || readSources.length > 0
+    confidence = (hasOfficial || domains >= 2) && hasReadableBasis && !opposing && !technicalLimitation ? 'alta' : 'media'
   }
 
   const confidenceExplanation: Record<ConfidenceLevel, string> = {
-    alta: 'Há trechos claros em fonte oficial ou em mais de uma fonte lida, sem evidência relevante em sentido oposto.',
-    media: 'Há trechos úteis, mas dependem de poucas fontes, de fontes não oficiais ou há sinais em sentido oposto.',
-    baixa: 'Poucos trechos relevantes foram encontrados nas fontes lidas, ou as fontes são de menor confiabilidade.',
+    alta: 'A afirmação principal tem trecho claro em fonte oficial ou fontes independentes lidas, sem divergência relevante não resolvida.',
+    media: 'Há evidência para a afirmação principal, mas ela depende de poucas fontes, de fonte não oficial ou possui ressalvas de leitura.',
+    baixa: 'A afirmação principal tem cobertura insuficiente, ou as fontes lidas não permitem uma conclusão robusta.',
   }
 
   return { classification, confidence, confidenceExplanation: confidenceExplanation[confidence], claimStatus }

@@ -23,6 +23,7 @@ import { validateEvidences } from './evidenceValidation'
 import type { SearchProvider } from './searchService'
 import { defaultFetcher, readSources, type PageFetcher } from './sourceReader'
 import { PIPELINE_VERSION } from '../version'
+import { composeNarrative } from '../lib/resultNarrative'
 
 export interface VerificationDeps {
   ai: AiService
@@ -50,25 +51,6 @@ export function normalizeClaims(drafts: { text: string; role?: ClaimRole }[]): C
     if (role === 'primary') primaryAssigned = true
     return { id: `c${index + 1}`, text: draft.text, role }
   })
-}
-
-const SUMMARY: Record<Classification, string> = {
-  confirmada: 'As fontes lidas sustentam a afirmação analisada.',
-  'parcialmente-confirmada': 'Parte das afirmações tem respaldo nas fontes lidas, e parte não.',
-  'sem-evidencias': 'As fontes lidas não permitem confirmar nem contradizer a afirmação.',
-  contradita: 'As fontes consultadas apresentam informações diferentes do que foi afirmado.',
-  'analise-humana': 'Não foi possível chegar a uma conclusão segura sobre esta informação.',
-}
-
-const EXPLANATION: Record<Exclude<Classification, 'analise-humana'>, string> = {
-  confirmada:
-    'Nos trechos das páginas que conseguimos ler, encontramos passagens que sustentam o que foi informado e nenhuma que o contrarie. Isso vale apenas para as páginas consultadas e não substitui a conferência dos documentos originais.',
-  'parcialmente-confirmada':
-    'As afirmações identificadas tiveram resultados diferentes: algumas encontraram respaldo nas fontes lidas e outras não, ou apresentaram divergências. Veja o que foi verificado em cada afirmação e compare com as fontes.',
-  'sem-evidencias':
-    'As páginas lidas não trazem trechos que confirmem ou contradigam a afirmação. Isso não significa que a informação seja falsa: apenas não há base suficiente nas fontes consultadas. Busque fontes primárias antes de compartilhar.',
-  contradita:
-    'Os trechos lidos apresentam informações diferentes das que foram afirmadas. Mostramos as divergências encontradas para que você compare com as fontes originais; isso não atribui responsabilidade a ninguém.',
 }
 
 const BADGE: Record<Stance, string> = {
@@ -108,6 +90,7 @@ interface BuildArgs {
   claims: Claim[]
   sources: SourceDoc[]
   evidences?: ApiEvidence[]
+  validEvidences?: ValidEvidence[]
   classification: Classification
   confidence: ConfidenceLevel
   confidenceExplanation: string
@@ -116,12 +99,12 @@ interface BuildArgs {
 }
 
 function buildResult(a: BuildArgs): VerificationResult {
-  const summary = guardText(SUMMARY[a.classification])
-  const rawExplanation =
-    a.classification === 'analise-humana'
-      ? `${a.humanReason ?? 'O resultado exige interpretação ou confirmação adicional.'} Recomendamos consultar o órgão responsável, a Ouvidoria ou o Serviço de Informação ao Cidadão antes de tirar conclusões.`
-      : EXPLANATION[a.classification]
-  const explanation = guardText(rawExplanation)
+  const narrative = composeNarrative({
+    classification: a.classification, claims: a.claims, sources: a.sources,
+    evidences: a.validEvidences ?? [], humanReason: a.humanReason,
+  })
+  const summary = guardText(narrative.summary)
+  const explanation = guardText(narrative.explanation)
   return {
     id: `vc-${randomUUID()}`,
     requestId: a.requestId,
@@ -268,7 +251,7 @@ export async function verify(input: string, deps: VerificationDeps): Promise<Ver
   }
 
   // 6. Classificação por regras + robustez
-  const out = classify({ claims, evidences: validEv })
+  const out = classify({ claims, evidences: validEv, sources })
 
   // 7. Limitações de qualidade
   const allRead = sources.filter((s) => s.readStatus === 'read')
@@ -302,6 +285,7 @@ export async function verify(input: string, deps: VerificationDeps): Promise<Ver
     claims: withStatus(claims, out.claimStatus, evidences),
     sources,
     evidences,
+    validEvidences: validEv,
     ...out,
     limitations,
   })
