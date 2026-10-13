@@ -3,7 +3,7 @@ import { TIER_WEIGHT } from '../lib/sourceRanking'
 import type { Claim, Classification, ConfidenceLevel, ValidEvidence } from '../types'
 
 /**
- * Regras de classificação v0.1.1 — centralizadas aqui para evoluir depois.
+ * Regras de classificação v0.2.0 — centralizadas aqui para evoluir depois.
  * A IA só informa a relação de cada trecho (supports/contradicts/...);
  * quem decide a classificação são ESTAS regras determinísticas.
  */
@@ -81,16 +81,19 @@ export function classify(input: ClassifyInput): ClassifyOutput {
 
   const verdicts = claims.map((c) => classifyClaim(c, evidences))
   const claimStatus = Object.fromEntries(claims.map((c, i) => [c.id, verdicts[i].status]))
-  const set = new Set(verdicts.map((v) => v.status))
-  const decisive = verdicts.filter((v) => v.status === 'confirmada' || v.status === 'contradita')
+  // Fallback defensivo para usos internos/legados que ainda não tenham role.
+  const primaryIndex = Math.max(0, claims.findIndex((claim) => claim.role === 'primary'))
+  const primary = verdicts[primaryIndex]
+  const secondary = verdicts.filter((_verdict, index) => index !== primaryIndex)
 
-  let classification: Classification
-  if (set.size === 1) {
-    classification = verdicts[0].status
-  } else if (decisive.length === 0) {
-    classification = set.has('analise-humana') ? 'analise-humana' : 'sem-evidencias'
-  } else {
-    classification = 'parcialmente-confirmada'
+  // A proposição central determina o sentido global. Não há pesos numéricos.
+  let classification: Classification = primary.status
+  if (primary.status === 'confirmada') {
+    if (secondary.some((verdict) => verdict.status === 'analise-humana')) {
+      classification = 'analise-humana'
+    } else if (secondary.some((verdict) => verdict.status === 'contradita' || verdict.status === 'parcialmente-confirmada')) {
+      classification = 'parcialmente-confirmada'
+    }
   }
 
   if (classification === 'analise-humana') {

@@ -7,6 +7,7 @@ import type {
   ApiEvidence,
   ApiSource,
   Claim,
+  ClaimRole,
   Classification,
   ConfidenceLevel,
   SearchResult,
@@ -29,6 +30,26 @@ export interface VerificationDeps {
   fetcher?: PageFetcher
   now?: () => Date
   maxSources?: number
+}
+
+/**
+ * Normaliza a estrutura semântica devolvida pela IA.
+ * Preserva compatibilidade: caso roles estejam ausentes/inválidas, a primeira
+ * claim válida vira principal e as demais, secundárias. Há sempre no máximo uma
+ * principal no pipeline.
+ */
+export function normalizeClaims(drafts: { text: string; role?: ClaimRole }[]): Claim[] {
+  let primaryAssigned = false
+  return drafts.slice(0, 3).map((draft, index) => {
+    const requestedPrimary = draft.role === 'primary'
+    const role: ClaimRole = requestedPrimary && !primaryAssigned
+      ? 'primary'
+      : !primaryAssigned && index === 0
+        ? 'primary'
+        : 'secondary'
+    if (role === 'primary') primaryAssigned = true
+    return { id: `c${index + 1}`, text: draft.text, role }
+  })
 }
 
 const SUMMARY: Record<Classification, string> = {
@@ -121,7 +142,7 @@ function buildResult(a: BuildArgs): VerificationResult {
 
 const LOW = 'Pouca base documental para uma conclusão: o resultado depende de leitura humana das fontes.'
 
-/** Pipeline v0.1: claims → busca → seleção → leitura → evidências → classificação → segurança → resposta. */
+/** Pipeline v0.2: claims → busca → seleção → leitura → evidências → classificação → segurança → resposta. */
 export async function verify(input: string, deps: VerificationDeps): Promise<VerificationResult> {
   const now = (deps.now ?? (() => new Date()))()
   const requestId = randomUUID().slice(0, 8)
@@ -131,7 +152,7 @@ export async function verify(input: string, deps: VerificationDeps): Promise<Ver
 
   // 1. Claims (falha da IA aqui interrompe: não há o que verificar)
   const drafts = await deps.ai.extractClaims(input)
-  const claims: Claim[] = drafts.slice(0, 3).map((d, i) => ({ id: `c${i + 1}`, text: d.text }))
+  const claims = normalizeClaims(drafts)
   if (claims.length === 0) {
     const out = classify({ claims, evidences: [] })
     return buildResult({ ...base, claims, sources: [], ...out, limitations: ['Não foi identificada nenhuma afirmação factual verificável no texto.'] })

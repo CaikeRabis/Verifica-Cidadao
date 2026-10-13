@@ -8,7 +8,7 @@ import { readSources } from '../src/services/sourceReader'
 import { generateSearchQueries } from '../src/lib/queryGeneration'
 import { rankForClaim, selectSources } from '../src/lib/sourceRanking'
 import { resolveSafeRedirect, validatePublicUrl } from '../src/lib/safeFetch'
-import { verify } from '../src/services/verificationService'
+import { normalizeClaims, verify } from '../src/services/verificationService'
 import type { AiService } from '../src/services/aiService'
 import type { SearchProvider } from '../src/services/searchService'
 import type { Candidate } from '../src/lib/sourceRanking'
@@ -49,7 +49,7 @@ describe('1. Validação de input', () => {
 })
 
 describe('2. Classificação básica', () => {
-  const c1: Claim = { id: 'c1', text: 'O repasse foi de 10 milhões' }
+  const c1: Claim = { id: 'c1', text: 'O repasse foi de 10 milhões', role: 'primary' }
 
   it('classifica como confirmada quando evidência oficial sustenta sem contradição', () => {
     const ev: ValidEvidence = {
@@ -101,7 +101,7 @@ describe('3. Fallback para análise humana', () => {
   })
 
   it('cai para analise-humana quando fontes de mesmo peso entram em conflito', () => {
-    const c: Claim = { id: 'c1', text: 'Obra foi concluída no prazo' }
+    const c: Claim = { id: 'c1', text: 'Obra foi concluída no prazo', role: 'primary' }
     const ev1: ValidEvidence = {
       id: 'e1',
       claimId: 'c1',
@@ -125,7 +125,7 @@ describe('3. Fallback para análise humana', () => {
   })
 
   it('cai para analise-humana se a afirmação contiver imputação de crime/fraude/corrupção', () => {
-    const sensitiveClaim: Claim = { id: 'c1', text: 'Houve fraude e corrupção no contrato da prefeitura' }
+    const sensitiveClaim: Claim = { id: 'c1', text: 'Houve fraude e corrupção no contrato da prefeitura', role: 'primary' }
     const ev: ValidEvidence = {
       id: 'e1',
       claimId: 'c1',
@@ -140,7 +140,7 @@ describe('3. Fallback para análise humana', () => {
   })
 
   it('cai para analise-humana quando nenhuma fonte pôde ser lida', () => {
-    const c: Claim = { id: 'c1', text: 'Texto qualquer' }
+    const c: Claim = { id: 'c1', text: 'Texto qualquer', role: 'primary' }
     const out = classify({ claims: [c], evidences: [], noSourcesRead: true })
     assert.equal(out.classification, 'analise-humana')
   })
@@ -155,7 +155,7 @@ describe('4. Evidência com quote inexistente deve ser descartada', () => {
   })
 
   it('descarta evidência quando o quote não existe literalmente no texto lido da fonte', () => {
-    const claims: Claim[] = [{ id: 'c1', text: 'Alegação' }]
+    const claims: Claim[] = [{ id: 'c1', text: 'Alegação', role: 'primary' }]
     const sources: SourceDoc[] = [
       {
         id: 's1',
@@ -183,7 +183,7 @@ describe('4. Evidência com quote inexistente deve ser descartada', () => {
   })
 
   it('descarta evidência se a fonte associada não foi lida', () => {
-    const claims: Claim[] = [{ id: 'c1', text: 'Alegação' }]
+    const claims: Claim[] = [{ id: 'c1', text: 'Alegação', role: 'primary' }]
     const sources: SourceDoc[] = [
       {
         id: 's1',
@@ -248,7 +248,7 @@ describe('5. Fonte não lida não deve aparecer como read', () => {
   })
 })
 
-describe('6. Regras v0.2-1 de classificação e agregação', () => {
+describe('6. Regras v0.2 de classificação e agregação', () => {
   const evidence = (claimId: string, stance: ValidEvidence['stance'], sourceId = 's1'): ValidEvidence => ({
     id: `${claimId}-${stance}-${sourceId}`,
     claimId,
@@ -259,26 +259,68 @@ describe('6. Regras v0.2-1 de classificação e agregação', () => {
     tier: 'oficial',
   })
 
-  it('mantém resultado contradita quando a claim principal é contradita e a secundária é confirmada (falha conhecida)', () => {
+  it('prioriza claim principal contradita mesmo quando a secundária é confirmada', () => {
     const claims: Claim[] = [
-      { id: 'c1', text: 'O salário mínimo em 2024 foi R$ 5.000.' },
-      { id: 'c2', text: 'O salário mínimo foi definido pelo governo federal.' },
+      { id: 'c1', text: 'O salário mínimo em 2024 foi R$ 5.000.', role: 'primary' },
+      { id: 'c2', text: 'O salário mínimo foi definido pelo governo federal.', role: 'secondary' },
     ]
     const out = classify({ claims, evidences: [evidence('c1', 'contradicts'), evidence('c2', 'supports', 's2')] })
     assert.equal(out.claimStatus.c1, 'contradita')
     assert.equal(out.claimStatus.c2, 'confirmada')
-    // Documenta a limitação atual a ser tratada na v0.2-2: não há peso de claim principal.
-    assert.equal(out.classification, 'parcialmente-confirmada')
+    assert.equal(out.classification, 'contradita')
   })
 
   it('classifica entrada composta como parcialmente confirmada quando há uma claim sustentada e outra contradita', () => {
-    const claims: Claim[] = [{ id: 'c1', text: 'Brasília foi inaugurada em 1960.' }, { id: 'c2', text: 'Brasília é a cidade mais populosa.' }]
+    const claims: Claim[] = [{ id: 'c1', text: 'Brasília foi inaugurada em 1960.', role: 'primary' }, { id: 'c2', text: 'Brasília é a cidade mais populosa.', role: 'secondary' }]
     const out = classify({ claims, evidences: [evidence('c1', 'supports'), evidence('c2', 'contradicts', 's2')] })
     assert.equal(out.classification, 'parcialmente-confirmada')
   })
 
+  it('mantém confirmada quando principal e secundária são confirmadas', () => {
+    const claims: Claim[] = [
+      { id: 'c1', text: 'O Senado possui 81 senadores.', role: 'primary' },
+      { id: 'c2', text: 'Cada unidade federativa elege três senadores.', role: 'secondary' },
+    ]
+    const out = classify({ claims, evidences: [evidence('c1', 'supports'), evidence('c2', 'supports', 's2')] })
+    assert.equal(out.classification, 'confirmada')
+  })
+
+  it('mantém sem evidências quando a principal não tem base, mesmo com secundária confirmada', () => {
+    const claims: Claim[] = [
+      { id: 'c1', text: 'O programa reduziu pela metade a espera em hospitais.', role: 'primary' },
+      { id: 'c2', text: 'A portaria foi publicada pelo ministério.', role: 'secondary' },
+    ]
+    const out = classify({ claims, evidences: [evidence('c2', 'supports', 's2')] })
+    assert.equal(out.claimStatus.c1, 'sem-evidencias')
+    assert.equal(out.classification, 'sem-evidencias')
+  })
+
+  it('mantém análise humana quando a principal exige análise humana', () => {
+    const claims: Claim[] = [
+      { id: 'c1', text: 'Houve fraude comprovada no contrato.', role: 'primary' },
+      { id: 'c2', text: 'O contrato foi publicado no portal.', role: 'secondary' },
+    ]
+    const out = classify({ claims, evidences: [evidence('c1', 'supports'), evidence('c2', 'supports', 's2')] })
+    assert.equal(out.claimStatus.c1, 'analise-humana')
+    assert.equal(out.classification, 'analise-humana')
+  })
+
+  it('atribui role primary à única claim e faz fallback quando a IA não informa roles', () => {
+    const single = normalizeClaims([{ text: 'Brasília foi inaugurada em 1960.' }])
+    assert.deepEqual(single.map((claim) => claim.role), ['primary'])
+
+    const fallback = normalizeClaims([
+      { text: 'O salário mínimo em 2024 foi R$ 5.000.' },
+      { text: 'O salário mínimo foi definido pelo governo federal.' },
+    ])
+    assert.deepEqual(fallback.map((claim) => claim.role), ['primary', 'secondary'])
+
+    const invalidRole = normalizeClaims([{ text: 'Uma única afirmação.', role: 'invalid' as never }])
+    assert.equal(invalidRole[0].role, 'primary')
+  })
+
   it('documenta que valores e datas dependem do stance fornecido pela IA', () => {
-    const claim: Claim = { id: 'c1', text: 'O salário mínimo em 2024 foi R$ 5.000.' }
+    const claim: Claim = { id: 'c1', text: 'O salário mínimo em 2024 foi R$ 5.000.', role: 'primary' }
     const out = classify({ claims: [claim], evidences: [evidence('c1', 'supports')] })
     assert.equal(out.classification, 'confirmada')
     // A regra ainda não compara R$ 5.000 com o valor literal da fonte: esse é escopo da v0.2-2.

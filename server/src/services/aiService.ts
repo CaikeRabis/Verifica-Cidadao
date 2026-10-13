@@ -1,10 +1,11 @@
 import type { Config } from '../config'
 import { AiInvalidResponseError, AiUnavailableError } from '../errors'
 import { selectRelevantExcerpts } from '../lib/contentWindowing'
-import type { RawEvidence, SourceDoc, Stance } from '../types'
+import type { ClaimRole, RawEvidence, SourceDoc, Stance } from '../types'
 
 export interface ClaimDraft {
   text: string
+  role?: ClaimRole
 }
 
 export interface AiService {
@@ -23,9 +24,11 @@ ${RULES}
 Tarefa: liste no máximo 3 afirmações ou alegações objetivas que o texto faz sobre a realidade (valores, datas, fatos, decisões, números).
 - Não pré-julgue a veracidade agora: extraia o que o texto alega (mesmo que possa ser incorreto, exagerado ou falso).
 - Cada afirmação deve ser uma frase curta e autocontida, fiel ao texto (sem acrescentar fatos novos).
+- Identifique UMA única afirmação central com role "primary". Se houver detalhes factuais autônomos que apenas contextualizam a central, use role "secondary" (no máximo duas).
+- Não divida artificialmente uma proposição factual única apenas para criar mais itens; preserve o significado da frase.
 - NÃO inclua opiniões, ironia, previsões, juízos de valor ou texto puramente subjetivo.
 - Se não houver nenhuma afirmação verificável, devolva a lista vazia.
-Formato: {"claims":[{"text":"..."}]}`
+Formato: {"claims":[{"text":"...","role":"primary"}]}`
 
 const EVIDENCE_SYSTEM = `Você extrai evidências de trechos de fontes realmente lidas, para avaliar afirmações.
 ${RULES}
@@ -97,7 +100,12 @@ export class OpenAiCompatibleService implements AiService {
     const out = (await this.chat(CLAIMS_SYSTEM, `TEXTO DO CIDADÃO:\n<<<\n${input}\n>>>`)) as { claims?: unknown }
     if (!Array.isArray(out.claims)) throw new AiInvalidResponseError('claims ausentes')
     return out.claims
-      .map((c) => ({ text: str((c as { text?: unknown })?.text, 300) }))
+      .map((c) => {
+        const item = c as { text?: unknown; role?: unknown }
+        const role: ClaimRole | undefined = item?.role === 'primary' || item?.role === 'secondary' ? item.role : undefined
+        const text = str(item?.text, 300)
+        return role ? { text, role } : { text }
+      })
       .filter((c): c is ClaimDraft => !!c.text && c.text.length >= 8)
       .slice(0, 3)
   }

@@ -1,3 +1,5 @@
+import type { PIPELINE_VERSION } from './version'
+
 export type Classification =
   | 'confirmada'
   | 'parcialmente-confirmada'
@@ -9,6 +11,7 @@ export type ConfidenceLevel = 'alta' | 'media' | 'baixa'
 export type ReadStatus = 'read' | 'snippet-only' | 'unavailable'
 export type SourceTier = 'oficial' | 'jornalismo' | 'outro'
 export type Stance = 'supports' | 'contradicts' | 'insufficient' | 'unclear'
+export type ClaimRole = 'primary' | 'secondary'
 
 export interface SearchResult {
   title: string
@@ -20,6 +23,8 @@ export interface SearchResult {
 export interface Claim {
   id: string
   text: string
+  /** Papel interno na agregação; a UI ainda não o expõe. */
+  role: ClaimRole
   status?: Classification
   evidenceIds?: string[]
 }
@@ -102,4 +107,3 @@ export interface VerificationResult {
   sources: ApiSource[]
   analyzedAt: string
 }
-import type { PIPELINE_VERSION } from './version'
