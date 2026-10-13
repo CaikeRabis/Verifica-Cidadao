@@ -6,7 +6,7 @@ import type { SourceDoc } from '../types'
 
 export type PageFetcher = (url: string) => Promise<FetchedText>
 
-export const defaultFetcher: PageFetcher = (url) => fetchText(url, { timeoutMs: 8000, maxBytes: 800_000, maxRedirects: 3 })
+export const defaultFetcher: PageFetcher = (url) => fetchText(url, { timeoutMs: 5000, maxBytes: 800_000, maxRedirects: 3 })
 
 const MIN_READABLE_CHARS = 200
 

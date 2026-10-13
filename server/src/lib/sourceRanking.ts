@@ -18,7 +18,7 @@ const NEWS_DOMAINS = [
   'metropoles.com', 'valor.globo.com', 'cartacapital.com.br', 'brasildefato.com.br', 'veja.abril.com.br',
   'agenciabrasil.com.br', 'senadonoticias.leg.br', 'noticias.uol.com.br', 'noticias.r7.com', 'r7.com',
   'exame.com', 'jota.info', 'congressoemfoco.com.br', 'gazetadopovo.com.br', 'infomoney.com.br',
-  'wikipedia.org', 'pt.wikipedia.org', 'brasilescola.uol.com.br', 'todamateria.com.br', 'mundoeducacao.uol.com.br',
+  'brasilescola.uol.com.br', 'todamateria.com.br', 'mundoeducacao.uol.com.br',
 ]
 
 export function domainOf(url: string): string {
@@ -101,7 +101,7 @@ export function rankForClaim(results: SearchResult[], limit = 3, claimText?: str
     }
 
     // Bônus educacional / enciclopédico de referência para fatos gerais
-    if (domain.endsWith('.edu.br') || domain.includes('wikipedia.org') || domain.includes('brasilescola')) {
+    if (domain.endsWith('.edu.br') || domain.includes('brasilescola')) {
       score += 3
     }
 

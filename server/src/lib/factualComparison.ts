@@ -95,6 +95,12 @@ export function compareFactualClaim(claim: string, evidence: string): FactualCom
   if (!hasClearContext(claim, evidence)) return undefined
   const claimed = extractFactualEntities(claim)
   const found = extractFactualEntities(evidence)
+  // Ano compartilhado, por si só, não confirma uma afirmação que também traz
+  // valor, percentual, data ou contagem. Isso evita aceitar uma fonte que só
+  // menciona o mesmo período, mas não o objeto quantitativo alegado.
+  const priorityKinds: FactualEntityKind[] = ['money', 'percentage', 'date', 'number']
+  if (claimed.some((entity) => priorityKinds.includes(entity.kind)) &&
+      !found.some((entity) => priorityKinds.includes(entity.kind))) return undefined
   const kinds: FactualEntityKind[] = ['money', 'percentage', 'date', 'year', 'number']
 
   const matches: FactualComparison[] = []

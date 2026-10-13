@@ -24,6 +24,16 @@ import type { SearchProvider } from './searchService'
 import { defaultFetcher, readSources, type PageFetcher } from './sourceReader'
 import { PIPELINE_VERSION } from '../version'
 import { composeNarrative } from '../lib/resultNarrative'
+import { performance } from 'node:perf_hooks'
+
+export interface PipelineTrace {
+  timingsMs: Record<string, number>
+  queries: Record<string, string[]>
+  searchResults: Record<string, SearchResult[]>
+  selectedSources: { title: string; url: string; domain: string; tier: SourceTier }[]
+  acceptedEvidences: number
+  discardedEvidences: number
+}
 
 export interface VerificationDeps {
   ai: AiService
@@ -31,6 +41,8 @@ export interface VerificationDeps {
   fetcher?: PageFetcher
   now?: () => Date
   maxSources?: number
+  /** Diagnóstico interno, usado pela bateria real; não faz parte da resposta da API. */
+  trace?: PipelineTrace
 }
 
 /**
@@ -127,6 +139,7 @@ const LOW = 'Pouca base documental para uma conclusão: o resultado depende de l
 
 /** Pipeline v0.2: claims → busca → seleção → leitura → evidências → classificação → segurança → resposta. */
 export async function verify(input: string, deps: VerificationDeps): Promise<VerificationResult> {
+  const pipelineStarted = performance.now()
   const now = (deps.now ?? (() => new Date()))()
   const requestId = randomUUID().slice(0, 8)
   const fetcher = deps.fetcher ?? defaultFetcher
@@ -134,7 +147,9 @@ export async function verify(input: string, deps: VerificationDeps): Promise<Ver
   const limitations: string[] = []
 
   // 1. Claims (falha da IA aqui interrompe: não há o que verificar)
+  const claimsStarted = performance.now()
   const drafts = await deps.ai.extractClaims(input)
+  deps.trace && (deps.trace.timingsMs.claimExtraction = Math.round(performance.now() - claimsStarted))
   const claims = normalizeClaims(drafts)
   if (claims.length === 0) {
     const out = classify({ claims, evidences: [] })
@@ -142,9 +157,11 @@ export async function verify(input: string, deps: VerificationDeps): Promise<Ver
   }
 
   // 2. Busca (gera até 3 consultas complementares por afirmação)
+  const searchStarted = performance.now()
   const perClaimSearches: { results: SearchResult[]; claimText: string }[] = []
   for (const c of claims) {
     const queries = generateSearchQueries(c.text)
+    if (deps.trace) deps.trace.queries[c.id] = queries
     const merged: SearchResult[] = []
     const seenUrls = new Set<string>()
     for (const q of queries) {
@@ -160,8 +177,10 @@ export async function verify(input: string, deps: VerificationDeps): Promise<Ver
         // falhas pontuais continuam para a próxima consulta complementar
       }
     }
+    if (deps.trace) deps.trace.searchResults[c.id] = merged
     perClaimSearches.push({ results: merged, claimText: c.text })
   }
+  deps.trace && (deps.trace.timingsMs.search = Math.round(performance.now() - searchStarted))
 
   const allSearchesFailed = perClaimSearches.every((p) => p.results.length === 0)
   if (allSearchesFailed) {
@@ -170,13 +189,16 @@ export async function verify(input: string, deps: VerificationDeps): Promise<Ver
 
   // 3. Seleção refinada (garante fontes oficiais e diversidade de domínios)
   const selected = selectSources(perClaimSearches, deps.maxSources ?? 5, 3)
+  if (deps.trace) deps.trace.selectedSources.push(...selected.map((s) => ({ title: s.title, url: s.url, domain: s.domain, tier: s.tier })))
   if (selected.length === 0) {
     const out = classify({ claims, evidences: [], noSourcesRead: true })
     return buildResult({ ...base, claims: withStatus(claims, out.claimStatus, []), sources: [], ...out, limitations: [...limitations, 'A busca não retornou páginas relacionadas à afirmação.'] })
   }
 
   // 4. Leitura real das páginas
+  const readingStarted = performance.now()
   const sources = await readSources(selected, fetcher, () => now)
+  deps.trace && (deps.trace.timingsMs.readSources = Math.round(performance.now() - readingStarted))
   const read = sources.filter((s) => s.readStatus === 'read')
   const unread = sources.length - read.length
   if (unread > 0) {
@@ -195,11 +217,23 @@ export async function verify(input: string, deps: VerificationDeps): Promise<Ver
   // 5. Evidências (IA) + validação programática obrigatória
   let validEv: ValidEvidence[] = []
   let discarded = 0
+  const evidenceStarted = performance.now()
   try {
     const raw = await deps.ai.extractEvidence(claims, read)
     const v = validateEvidences(raw, claims, sources)
     validEv = v.valid
     discarded = v.discarded
+
+    // Cobertura dirigida: nenhuma claim é resolvida por evidência de outra.
+    // Para claims ainda sem evidência válida, pede-se uma extração focada nas
+    // páginas já lidas antes de ampliar a busca.
+    const uncovered = claims.filter((claim) => !validEv.some((evidence) => evidence.claimId === claim.id))
+    if (uncovered.length > 0) {
+      const focusedRaw = await deps.ai.extractEvidence(uncovered, read)
+      const focused = validateEvidences(focusedRaw, uncovered, sources)
+      discarded += focused.discarded
+      validEv = [...validEv, ...focused.valid].map((evidence, index) => ({ ...evidence, id: `e${index + 1}` }))
+    }
 
     // 5b. SEGUNDA RODADA CONTROLADA: se encontrou fontes mas nenhuma evidência válida
     if (validEv.length === 0 && read.length > 0) {
@@ -218,6 +252,7 @@ export async function verify(input: string, deps: VerificationDeps): Promise<Ver
       }
       if (retryMerged.length > 0) {
         const round2Candidates = selectSources([{ results: retryMerged }], 3, 3)
+        if (deps.trace) deps.trace.selectedSources.push(...round2Candidates.map((s) => ({ title: s.title, url: s.url, domain: s.domain, tier: s.tier })))
         if (round2Candidates.length > 0) {
           const round2Sources = await readSources(round2Candidates, fetcher, () => now, sources.length)
           const round2Read = round2Sources.filter((s) => s.readStatus === 'read')
@@ -249,9 +284,16 @@ export async function verify(input: string, deps: VerificationDeps): Promise<Ver
   if (discarded > 0) {
     limitations.push('Alguns trechos sugeridos pela IA foram descartados por não constarem literalmente nas páginas lidas.')
   }
+  if (deps.trace) {
+    deps.trace.timingsMs.evidenceExtractionAndValidation = Math.round(performance.now() - evidenceStarted)
+    deps.trace.acceptedEvidences = validEv.length
+    deps.trace.discardedEvidences = discarded
+  }
 
   // 6. Classificação por regras + robustez
+  const classificationStarted = performance.now()
   const out = classify({ claims, evidences: validEv, sources })
+  deps.trace && (deps.trace.timingsMs.classification = Math.round(performance.now() - classificationStarted))
 
   // 7. Limitações de qualidade
   const allRead = sources.filter((s) => s.readStatus === 'read')
@@ -280,7 +322,7 @@ export async function verify(input: string, deps: VerificationDeps): Promise<Ver
     }
   })
 
-  return buildResult({
+  const result = buildResult({
     ...base,
     claims: withStatus(claims, out.claimStatus, evidences),
     sources,
@@ -289,6 +331,8 @@ export async function verify(input: string, deps: VerificationDeps): Promise<Ver
     ...out,
     limitations,
   })
+  deps.trace && (deps.trace.timingsMs.totalPipeline = Math.round(performance.now() - pipelineStarted))
+  return result
 }
 
 function withStatus(claims: Claim[], status: Record<string, Classification>, evidences: ApiEvidence[]): Claim[] {

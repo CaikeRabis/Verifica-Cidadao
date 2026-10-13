@@ -17,6 +17,7 @@ describe('Comparação factual determinística v0.2.1', () => {
   it('compara contagens apenas com contexto factual compartilhado', () => {
     assert.equal(compare('O STF possui 11 ministros.', 'O STF é composto por 11 ministros.'), 'supports')
     assert.equal(compare('O STF possui 50 ministros.', 'O STF é composto por 11 ministros.'), 'contradicts')
+    assert.equal(compare('O STF é composto por 15 ministros.', 'O STF é composto por 11 ministros.'), 'contradicts')
   })
 
   it('normaliza datas completas entre formatos e detecta divergência', () => {
@@ -48,5 +49,21 @@ describe('Comparação factual determinística v0.2.1', () => {
     const { valid } = validateEvidences(raw, claims, sources)
     assert.equal(valid[0].stance, 'contradicts')
     assert.equal(valid[0].stanceSource, 'deterministic')
+  })
+
+  it('descarta fonte confiável que menciona só o mesmo ano, sem o valor alegado', () => {
+    const claims: Claim[] = [{ id: 'c1', text: 'O investimento cultural em 2024 foi de R$ 50 milhões.', role: 'primary' }]
+    const sources: SourceDoc[] = [{
+      id: 's1', title: 'Portal oficial', url: 'https://gov.br/cultura', domain: 'gov.br',
+      tier: 'oficial', readStatus: 'read', accessedAt: '2026-10-13T00:00:00Z',
+      text: 'Em 2024, a secretaria realizou atividades culturais em diversos bairros.',
+    }]
+    const raw: RawEvidence[] = [{
+      claimId: 'c1', sourceId: 's1', quote: 'Em 2024, a secretaria realizou atividades culturais em diversos bairros.',
+      context: '', stance: 'supports',
+    }]
+    const { valid, discarded } = validateEvidences(raw, claims, sources)
+    assert.equal(valid.length, 0)
+    assert.equal(discarded, 1)
   })
 })

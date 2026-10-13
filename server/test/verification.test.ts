@@ -124,6 +124,15 @@ describe('3. Fallback para análise humana', () => {
     assert.equal(verdict.status, 'analise-humana')
   })
 
+  it('cai para analise-humana diante de suporte e contradição fortes, ainda que não oficiais', () => {
+    const c: Claim = { id: 'c1', text: 'A obra foi concluída no prazo.', role: 'primary' }
+    const evidence = (id: string, stance: 'supports' | 'contradicts'): ValidEvidence => ({
+      id, claimId: 'c1', sourceId: id, quote: 'trecho documental relevante sobre a obra concluída',
+      context: '', stance, tier: 'jornalismo',
+    })
+    assert.equal(classifyClaim(c, [evidence('s1', 'supports'), evidence('s2', 'contradicts')]).status, 'analise-humana')
+  })
+
   it('cai para analise-humana se a afirmação contiver imputação de crime/fraude/corrupção', () => {
     const sensitiveClaim: Claim = { id: 'c1', text: 'Houve fraude e corrupção no contrato da prefeitura', role: 'primary' }
     const ev: ValidEvidence = {
@@ -376,7 +385,13 @@ describe('7. Infraestrutura de alto valor', () => {
     const result = await verify('Brasília foi inaugurada em 1960.', {
       ai,
       search,
-      fetcher: async (url) => ({ finalUrl: url, contentType: 'text/html', body: `<article>Brasília foi inaugurada em 1960. ${'texto '.repeat(50)}</article>`, truncated: false }),
+      fetcher: async (url) => ({
+        finalUrl: url, contentType: 'text/html',
+        body: url.includes('/segunda')
+          ? `<article>Brasília foi inaugurada em 1960. ${'texto '.repeat(50)}</article>`
+          : `<article>História administrativa da capital. ${'texto '.repeat(50)}</article>`,
+        truncated: false,
+      }),
     })
     assert.equal(result.classification, 'confirmada')
     assert.ok(result.limitations.some((item) => item.includes('segunda rodada')))

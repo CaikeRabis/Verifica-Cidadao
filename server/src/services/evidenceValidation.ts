@@ -1,6 +1,6 @@
 import { guardText } from '../lib/languageSafety'
 import { extractKeywords } from '../lib/queryGeneration'
-import { compareFactualClaim } from '../lib/factualComparison'
+import { compareFactualClaim, extractFactualEntities } from '../lib/factualComparison'
 import type { Claim, RawEvidence, SourceDoc, ValidEvidence } from '../types'
 
 const norm = (s: string) =>
@@ -22,6 +22,24 @@ export function quoteExistsIn(quote: string, text: string): boolean {
 export interface ValidationResult {
   valid: ValidEvidence[]
   discarded: number
+}
+
+const HISTORICAL_CONTEXT = /\b(inicial|hist[oó]ric[oa]|antig[oa]|[àa]\s+época|originalmente)\b/i
+
+/** Relevância mínima: a fonte pode ser confiável, mas ainda não responder à claim. */
+function isRelevantToClaim(claim: Claim, quote: string, stance: RawEvidence['stance'], factual: ReturnType<typeof compareFactualClaim>): boolean {
+  const claimWords = extractKeywords(claim.text).filter((word) => word.length >= 3 && !/^\d/.test(word))
+  const quoteWords = new Set(extractKeywords(quote))
+  const overlap = claimWords.filter((word) => quoteWords.has(word)).length
+  if (overlap < 2) return false
+
+  // Claims quantitativas exigem comparação objetiva; texto com número em outro
+  // contexto (ou número por extenso) não pode virar suporte por decisão da IA.
+  if (extractFactualEntities(claim.text).length > 0 && !factual) return false
+  // Uma composição histórica não comprova a composição atual quando a claim não
+  // traz esse recorte temporal.
+  if (stance === 'supports' && HISTORICAL_CONTEXT.test(quote) && !HISTORICAL_CONTEXT.test(claim.text)) return false
+  return true
 }
 
 /**
@@ -53,6 +71,10 @@ export function validateEvidences(raw: RawEvidence[], claims: Claim[], sources: 
     const claim = claims.find((c) => c.id === e.claimId)!
     const factual = compareFactualClaim(claim.text, e.quote)
     const stance = factual?.stance ?? e.stance
+    if (!isRelevantToClaim(claim, e.quote, stance, factual)) {
+      discarded++
+      continue
+    }
     if (stance === 'insufficient') continue // lida, mas irrelevante: não é exibida como evidência
     const key = `${e.claimId}|${e.sourceId}|${norm(e.quote)}`
     if (seen.has(key) || (perClaim.get(e.claimId) ?? 0) >= 4) continue
@@ -72,32 +94,6 @@ export function validateEvidences(raw: RawEvidence[], claims: Claim[], sources: 
       tier: source!.tier,
       stanceSource: factual ? 'deterministic' : 'ai',
     })
-  }
-
-  // Agregação inteligente de claims: se uma evidência de suporte cobre semanticamente
-  // outra claim que ainda não tem evidência, associa a evidência também a ela.
-  for (const otherClaim of claims) {
-    if (valid.some((v) => v.claimId === otherClaim.id)) continue
-    const otherKeywords = extractKeywords(otherClaim.text)
-    if (otherKeywords.length === 0) continue
-
-    for (const v of [...valid]) {
-      if (v.stance !== 'supports') continue
-      const qNorm = norm(v.quote)
-      const matchCount = otherKeywords.filter((kw) => qNorm.includes(kw)).length
-      if (matchCount >= Math.min(2, otherKeywords.length)) {
-        const key = `${otherClaim.id}|${v.sourceId}|${norm(v.quote)}`
-        if (seen.has(key)) continue
-        seen.add(key)
-        valid.push({
-          ...v,
-          id: `e${valid.length + 1}`,
-          claimId: otherClaim.id,
-          context: `Trecho da mesma fonte documental que também respalda a afirmação analisada.`,
-        })
-        break
-      }
-    }
   }
 
   return { valid, discarded }

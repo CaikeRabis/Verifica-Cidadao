@@ -48,6 +48,9 @@ export function classifyClaim(claim: Claim, evidences: ValidEvidence[]): ClaimVe
   if (sup.length > 0 && con.length > 0) {
     const s = maxWeight(sup)
     const c = maxWeight(con)
+    if (s >= TIER_WEIGHT.jornalismo && c >= TIER_WEIGHT.jornalismo) {
+      return { status: 'analise-humana', reason: 'Fontes relevantes de força semelhante apresentam informações conflitantes.' }
+    }
     if (c > s && c >= TIER_WEIGHT.jornalismo) return { status: 'contradita' }
     if (s > c && s >= TIER_WEIGHT.jornalismo) return confirmed()
     return { status: 'analise-humana', reason: 'Fontes de qualidade semelhante apresentam informações conflitantes.' }
