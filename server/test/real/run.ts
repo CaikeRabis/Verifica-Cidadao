@@ -39,7 +39,9 @@ async function main() {
         category, input, classification: result.classification, confidence: result.confidence,
         primaryClaim: result.claims.find((claim) => claim.role === 'primary')?.text,
         sourcesFound: result.sources.length, sourcesRead: result.sources.filter((source) => source.readStatus === 'read').length,
-        evidences: result.evidences.length, summary: result.summary, latencyMs: Math.round(performance.now() - started),
+        sources: result.sources.map((source) => ({ title: source.title, domain: source.domain, readStatus: source.readStatus })),
+        evidences: result.evidences.map((evidence) => ({ stance: evidence.stance, source: evidence.sourceName, quote: evidence.quote })),
+        summary: result.summary, explanation: result.explanation, latencyMs: Math.round(performance.now() - started),
       })
     } catch (error) {
       results.push({ category, input, error: error instanceof Error ? error.message : 'erro desconhecido', latencyMs: Math.round(performance.now() - started) })
