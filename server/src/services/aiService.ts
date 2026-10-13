@@ -33,14 +33,14 @@ Formato: {"claims":[{"text":"...","role":"primary"}]}`
 const EVIDENCE_SYSTEM = `Você extrai evidências de trechos de fontes realmente lidas, para avaliar afirmações.
 ${RULES}
 Tarefa: para cada afirmação, procure nas FONTES passagens que a sustentem, a contradigam ou sejam insuficientes/ambíguas.
-- "quote": cópia LITERAL e contínua do texto da fonte (entre 20 e 300 caracteres), sem alterar nenhuma palavra.
+- "quote": cópia LITERAL e contínua da janela indicada (20 a 300 caracteres), sem alterar palavra, pontuação, abreviação, número ou data; não combine janelas nem invente reticências.
 - "context": uma frase neutra explicando a relação do trecho com a afirmação (sem acusar ninguém).
 - "stance": "supports" (sustenta), "contradicts" (contradiz diretamente), "insufficient" (tema próximo mas não decide) ou "unclear" (ambíguo).
 - "foundValue"/"allegedValue": somente se houver valor/data explícito (ex.: "R$ 15,4 milhões", "81 senadores", "1960"); caso contrário omita.
 - ATENÇÃO: Avalie CADA afirmação fornecida individualmente. Se uma mesma passagem sustentar ou contradizer mais de uma afirmação, gere uma entrada para CADA claim correspondente.
 - Use apenas os "sourceId" fornecidos e apenas os "claimId" fornecidos. No máximo 3 evidências por fonte.
 - Se nada for relevante, devolva lista vazia.
-Formato: {"evidences":[{"claimId":"c1","sourceId":"s1","quote":"...","context":"...","stance":"supports","foundValue":"...","allegedValue":"..."}]}`
+Formato: {"evidences":[{"claimId":"c1","sourceId":"s1","windowId":"s1-w1","quote":"...","context":"...","stance":"supports","foundValue":"...","allegedValue":"..."}]}`
 
 const STANCES: Stance[] = ['supports', 'contradicts', 'insufficient', 'unclear']
 
@@ -114,7 +114,7 @@ export class OpenAiCompatibleService implements AiService {
     const sourceBlock = sources
       .map(
         (s) =>
-          `SOURCE ${s.id}\nTítulo: ${s.title}\nURL: ${s.url}\nPublicada em: ${s.publishedAt ?? 'não informada'}\n<<<\n${selectRelevantExcerpts(s.text ?? '', claims, 6000)}\n>>>`,
+          `SOURCE ${s.id}\nTítulo: ${s.title}\nURL: ${s.url}\nPublicada em: ${s.publishedAt ?? 'não informada'}\n[WINDOW ${s.id}-w1]\n<<<\n${selectRelevantExcerpts(s.text ?? '', claims, 6000)}\n>>>`,
       )
       .join('\n\n')
     const user = `AFIRMAÇÕES:\n${JSON.stringify(claims)}\n\nFONTES LIDAS:\n${sourceBlock}`
@@ -135,6 +135,7 @@ export class OpenAiCompatibleService implements AiService {
         context: str(e?.context, 300) ?? '',
         foundValue: str(e?.foundValue, 80),
         allegedValue: str(e?.allegedValue, 80),
+        windowId: str(e?.windowId, 80),
       })
     }
     return list

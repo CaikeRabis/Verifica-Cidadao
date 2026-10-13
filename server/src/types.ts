@@ -56,6 +56,7 @@ export interface RawEvidence {
   stance: Stance
   foundValue?: string
   allegedValue?: string
+  windowId?: string
 }
 
 export interface ValidEvidence extends RawEvidence {

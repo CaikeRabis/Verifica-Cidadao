@@ -15,8 +15,34 @@ const norm = (s: string) =>
 
 /** O quote precisa existir literalmente (ignorando espaços, caixa e tipo de aspas) no texto lido. */
 export function quoteExistsIn(quote: string, text: string): boolean {
-  const q = norm(quote)
-  return q.length >= 15 && norm(text).includes(q)
+  return locateQuote(quote, text) !== undefined || (norm(quote).length >= 15 && norm(text).includes(norm(quote)))
+}
+
+export interface QuoteLocation { start: number; end: number; match: 'exact' | 'formatting' }
+
+/** Localização literal, tolerando somente apresentação HTML/Unicode e espaços. */
+export function locateQuote(quote: string, text: string): QuoteLocation | undefined {
+  if (quote.trim().length < 15) return undefined
+  const exact = text.indexOf(quote)
+  if (exact >= 0) return { start: exact, end: exact + quote.length, match: 'exact' }
+  const compact = (value: string) => value.normalize('NFC').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim()
+  const q = compact(quote)
+  const chars: string[] = []
+  const offsets: number[] = []
+  let previousSpace = false
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i].normalize('NFC')
+    if (/\s/.test(ch) || ch === '\u00a0') {
+      if (!previousSpace) { chars.push(' '); offsets.push(i); previousSpace = true }
+    } else { chars.push(ch); offsets.push(i); previousSpace = false }
+  }
+  const normalized = chars.join('').trim()
+  const start = normalized.indexOf(q)
+  if (start < 0) return undefined
+  const leading = chars.findIndex((char) => char !== ' ')
+  const mappedStart = offsets[start + Math.max(leading, 0)]
+  const mappedEnd = offsets[Math.min(offsets.length - 1, start + Math.max(leading, 0) + q.length - 1)] + 1
+  return { start: mappedStart, end: mappedEnd, match: 'formatting' }
 }
 
 export interface ValidationResult {
