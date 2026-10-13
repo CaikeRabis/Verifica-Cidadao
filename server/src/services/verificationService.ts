@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { AiInvalidResponseError, AiUnavailableError, SearchUnavailableError } from '../errors'
 import { guardText } from '../lib/languageSafety'
+import { extractKeywords, generateSearchQueries } from '../lib/queryGeneration'
 import { selectSources } from '../lib/sourceRanking'
 import type {
   ApiEvidence,
@@ -8,9 +9,11 @@ import type {
   Claim,
   Classification,
   ConfidenceLevel,
+  SearchResult,
   SourceDoc,
   SourceTier,
   Stance,
+  ValidEvidence,
   VerificationResult,
 } from '../types'
 import type { AiService } from './aiService'
@@ -135,16 +138,35 @@ export async function verify(input: string, deps: VerificationDeps): Promise<Ver
     return buildResult({ ...base, claims, sources: [], ...out, limitations: ['Não foi identificada nenhuma afirmação factual verificável no texto.'] })
   }
 
-  // 2. Busca (uma consulta curta por claim)
-  const searches = await Promise.allSettled(claims.map((c) => deps.search.search(c.text.slice(0, 200), 8)))
-  if (searches.every((s) => s.status === 'rejected')) throw new SearchUnavailableError('busca indisponível')
-  const results = searches.map((s) => (s.status === 'fulfilled' ? s.value : []))
-  if (searches.some((s) => s.status === 'rejected')) {
-    limitations.push('A busca falhou para parte das afirmações; elas podem ter menos fontes consultadas.')
+  // 2. Busca (gera até 3 consultas complementares por afirmação)
+  const perClaimSearches: { results: SearchResult[]; claimText: string }[] = []
+  for (const c of claims) {
+    const queries = generateSearchQueries(c.text)
+    const merged: SearchResult[] = []
+    const seenUrls = new Set<string>()
+    for (const q of queries) {
+      try {
+        const results = await deps.search.search(q, 6)
+        for (const item of results) {
+          if (!seenUrls.has(item.url)) {
+            seenUrls.add(item.url)
+            merged.push(item)
+          }
+        }
+      } catch {
+        // falhas pontuais continuam para a próxima consulta complementar
+      }
+    }
+    perClaimSearches.push({ results: merged, claimText: c.text })
   }
 
-  // 3. Seleção
-  const selected = selectSources(results, deps.maxSources ?? 5, 3)
+  const allSearchesFailed = perClaimSearches.every((p) => p.results.length === 0)
+  if (allSearchesFailed) {
+    throw new SearchUnavailableError('busca indisponível')
+  }
+
+  // 3. Seleção refinada (garante fontes oficiais e diversidade de domínios)
+  const selected = selectSources(perClaimSearches, deps.maxSources ?? 5, 3)
   if (selected.length === 0) {
     const out = classify({ claims, evidences: [], noSourcesRead: true })
     return buildResult({ ...base, claims: withStatus(claims, out.claimStatus, []), sources: [], ...out, limitations: [...limitations, 'A busca não retornou páginas relacionadas à afirmação.'] })
@@ -168,13 +190,46 @@ export async function verify(input: string, deps: VerificationDeps): Promise<Ver
   }
 
   // 5. Evidências (IA) + validação programática obrigatória
-  let validEv
+  let validEv: ValidEvidence[] = []
   let discarded = 0
   try {
     const raw = await deps.ai.extractEvidence(claims, read)
     const v = validateEvidences(raw, claims, sources)
     validEv = v.valid
     discarded = v.discarded
+
+    // 5b. SEGUNDA RODADA CONTROLADA: se encontrou fontes mas nenhuma evidência válida
+    if (validEv.length === 0 && read.length > 0) {
+      const readUrls = new Set(sources.map((s) => s.url))
+      const retryMerged: SearchResult[] = []
+      for (const c of claims) {
+        const kw = extractKeywords(c.text).slice(0, 5).join(' ')
+        try {
+          const res = await deps.search.search(`${kw} dados oficiais`, 6)
+          for (const item of res) {
+            if (!readUrls.has(item.url) && !retryMerged.some((m) => m.url === item.url)) {
+              retryMerged.push(item)
+            }
+          }
+        } catch {}
+      }
+      if (retryMerged.length > 0) {
+        const round2Candidates = selectSources([{ results: retryMerged }], 3, 3)
+        if (round2Candidates.length > 0) {
+          const round2Sources = await readSources(round2Candidates, fetcher, () => now, sources.length)
+          const round2Read = round2Sources.filter((s) => s.readStatus === 'read')
+          if (round2Read.length > 0) {
+            const raw2 = await deps.ai.extractEvidence(claims, round2Read)
+            const v2 = validateEvidences(raw2, claims, [...sources, ...round2Sources])
+            if (v2.valid.length > 0) {
+              validEv = v2.valid
+              sources.push(...round2Sources)
+              limitations.push('Foi necessária uma segunda rodada de busca com termos complementares para localizar evidências suficientes.')
+            }
+          }
+        }
+      }
+    }
   } catch (e) {
     if (!(e instanceof AiUnavailableError || e instanceof AiInvalidResponseError)) throw e
     return buildResult({
@@ -196,11 +251,12 @@ export async function verify(input: string, deps: VerificationDeps): Promise<Ver
   const out = classify({ claims, evidences: validEv })
 
   // 7. Limitações de qualidade
-  if (!read.some((s) => s.tier === 'oficial')) limitations.push('Nenhuma fonte oficial foi localizada entre as páginas lidas.')
-  if (read.length > 0 && read.every((s) => s.tier === 'outro')) {
+  const allRead = sources.filter((s) => s.readStatus === 'read')
+  if (!allRead.some((s) => s.tier === 'oficial')) limitations.push('Nenhuma fonte oficial foi localizada entre as páginas lidas.')
+  if (allRead.length > 0 && allRead.every((s) => s.tier === 'outro')) {
     limitations.push('As páginas lidas não são oficiais nem veículos de imprensa da nossa lista de referência.')
   }
-  limitations.push('A leitura é limitada a poucas páginas e ao trecho inicial de cada uma.')
+  limitations.push('A leitura priorizou os trechos mais relevantes e densos de cada página selecionada.')
 
   const evidences: ApiEvidence[] = validEv.map((e) => {
     const s = sources.find((x) => x.id === e.sourceId)!

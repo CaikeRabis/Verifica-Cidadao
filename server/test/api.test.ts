@@ -72,7 +72,7 @@ describe('Integração HTTP end-to-end do servidor', () => {
       body: JSON.stringify({}),
     })
     assert.equal(res.status, 400)
-    const data = await res.json()
+    const data = (await res.json()) as any
     assert.equal(data.error.code, 'invalid_input')
   })
 
@@ -83,7 +83,7 @@ describe('Integração HTTP end-to-end do servidor', () => {
       body: JSON.stringify({ input: 'O Ministério da Saúde repassou 45 milhões para reforço hospitalar dos municípios' }),
     })
     assert.equal(res.status, 200)
-    const data = await res.json()
+    const data = (await res.json()) as any
     assert.ok(data.id)
     assert.ok(data.requestId)
     assert.equal(data.pipelineVersion, '0.1')

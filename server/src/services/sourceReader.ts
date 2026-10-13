@@ -19,11 +19,12 @@ export async function readSources(
   candidates: Candidate[],
   fetcher: PageFetcher = defaultFetcher,
   now: () => Date = () => new Date(),
+  startIndex = 0,
 ): Promise<SourceDoc[]> {
   const settled = await Promise.allSettled(candidates.map((c) => fetcher(c.url)))
   return candidates.map((c, i): SourceDoc => {
     const base = {
-      id: `s${i + 1}`,
+      id: `s${startIndex + i + 1}`,
       title: c.title,
       url: c.url,
       domain: c.domain,

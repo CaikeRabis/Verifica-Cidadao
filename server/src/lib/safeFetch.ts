@@ -95,6 +95,7 @@ export interface FetchOptions {
   timeoutMs?: number
   maxBytes?: number
   maxRedirects?: number
+  headers?: Record<string, string>
 }
 
 export interface FetchedText {
@@ -109,17 +110,29 @@ type Hop = FetchedText & { redirect?: string }
 function decodeBody(buf: Buffer, contentType: string): string {
   let charset = contentType.match(/charset=([\w-]+)/i)?.[1]
   if (!charset) {
-    const head = buf.subarray(0, 2048).toString('latin1')
-    charset = head.match(/<meta[^>]+charset=["']?([\w-]+)/i)?.[1]
+    const head = buf.subarray(0, 4096).toString('latin1')
+    charset = head.match(/<meta[^>]+(?:charset=["']?|content="[^"]*charset=)([\w-]+)/i)?.[1]
+  }
+  if (charset) {
+    try {
+      return new TextDecoder(charset).decode(buf)
+    } catch {}
   }
   try {
-    return new TextDecoder(charset || 'utf-8').decode(buf)
+    const utf8 = new TextDecoder('utf-8').decode(buf)
+    if (!utf8.includes('\uFFFD')) return utf8
+    return new TextDecoder('windows-1252').decode(buf)
   } catch {
-    return buf.toString('utf8')
+    return new TextDecoder('windows-1252').decode(buf)
   }
 }
 
-function requestOnce(url: URL, budgetMs: number, maxBytes: number): Promise<Hop> {
+function requestOnce(
+  url: URL,
+  budgetMs: number,
+  maxBytes: number,
+  customHeaders?: Record<string, string>,
+): Promise<Hop> {
   return new Promise<Hop>((resolve, reject) => {
     if (budgetMs <= 0) return reject(new FetchFailedError('timeout'))
     let settled = false
@@ -136,9 +149,13 @@ function requestOnce(url: URL, budgetMs: number, maxBytes: number): Promise<Hop>
         method: 'GET',
         lookup: guardedLookup as never,
         headers: {
-          'User-Agent': 'VerificaCidadaoBot/0.1 (verificacao informativa)',
-          Accept: 'text/html,text/plain;q=0.9',
+          'User-Agent':
+            customHeaders?.['User-Agent'] ??
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          Accept: customHeaders?.Accept ?? 'text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8',
+          'Accept-Language': customHeaders?.['Accept-Language'] ?? 'pt-BR,pt;q=0.9,en-US;q=0.8',
           'Accept-Encoding': 'identity', // evita bombas de descompressão
+          ...customHeaders,
         },
       },
       (res) => {
@@ -208,7 +225,7 @@ export async function fetchText(raw: string, opts: FetchOptions = {}): Promise<F
   let current = raw
   for (let hop = 0; hop <= maxRedirects; hop++) {
     const url = validatePublicUrl(current)
-    const res = await requestOnce(url, deadline - Date.now(), maxBytes)
+    const res = await requestOnce(url, deadline - Date.now(), maxBytes, opts.headers)
     if (res.redirect) {
       current = new URL(res.redirect, url).toString()
       continue

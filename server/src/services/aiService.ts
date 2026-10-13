@@ -1,5 +1,6 @@
 import type { Config } from '../config'
 import { AiInvalidResponseError, AiUnavailableError } from '../errors'
+import { selectRelevantExcerpts } from '../lib/contentWindowing'
 import type { RawEvidence, SourceDoc, Stance } from '../types'
 
 export interface ClaimDraft {
@@ -19,10 +20,11 @@ const RULES = `Regras invioláveis:
 
 const CLAIMS_SYSTEM = `Você extrai afirmações factuais verificáveis de um texto em português do Brasil.
 ${RULES}
-Tarefa: liste no máximo 3 afirmações factuais, objetivas e verificáveis em fontes públicas (valores, datas, fatos, decisões, números).
-Cada afirmação deve ser uma frase curta e autocontida, fiel ao texto (sem acrescentar fatos).
-NÃO inclua opiniões, ironia, previsões, juízos de valor ou texto puramente subjetivo.
-Se não houver nenhuma afirmação verificável, devolva a lista vazia.
+Tarefa: liste no máximo 3 afirmações ou alegações objetivas que o texto faz sobre a realidade (valores, datas, fatos, decisões, números).
+- Não pré-julgue a veracidade agora: extraia o que o texto alega (mesmo que possa ser incorreto, exagerado ou falso).
+- Cada afirmação deve ser uma frase curta e autocontida, fiel ao texto (sem acrescentar fatos novos).
+- NÃO inclua opiniões, ironia, previsões, juízos de valor ou texto puramente subjetivo.
+- Se não houver nenhuma afirmação verificável, devolva a lista vazia.
 Formato: {"claims":[{"text":"..."}]}`
 
 const EVIDENCE_SYSTEM = `Você extrai evidências de trechos de fontes realmente lidas, para avaliar afirmações.
@@ -31,13 +33,13 @@ Tarefa: para cada afirmação, procure nas FONTES passagens que a sustentem, a c
 - "quote": cópia LITERAL e contínua do texto da fonte (entre 20 e 300 caracteres), sem alterar nenhuma palavra.
 - "context": uma frase neutra explicando a relação do trecho com a afirmação (sem acusar ninguém).
 - "stance": "supports" (sustenta), "contradicts" (contradiz diretamente), "insufficient" (tema próximo mas não decide) ou "unclear" (ambíguo).
-- "foundValue"/"allegedValue": somente se houver valor/data explícito (ex.: "R$ 15,4 milhões"); caso contrário omita.
-- Use apenas os "sourceId" fornecidos e apenas os "claimId" fornecidos. No máximo 2 evidências por fonte.
+- "foundValue"/"allegedValue": somente se houver valor/data explícito (ex.: "R$ 15,4 milhões", "81 senadores", "1960"); caso contrário omita.
+- ATENÇÃO: Avalie CADA afirmação fornecida individualmente. Se uma mesma passagem sustentar ou contradizer mais de uma afirmação, gere uma entrada para CADA claim correspondente.
+- Use apenas os "sourceId" fornecidos e apenas os "claimId" fornecidos. No máximo 3 evidências por fonte.
 - Se nada for relevante, devolva lista vazia.
 Formato: {"evidences":[{"claimId":"c1","sourceId":"s1","quote":"...","context":"...","stance":"supports","foundValue":"...","allegedValue":"..."}]}`
 
 const STANCES: Stance[] = ['supports', 'contradicts', 'insufficient', 'unclear']
-const SOURCE_CHARS = 5000
 
 function parseJson(content: string): unknown {
   const cleaned = content.replace(/^```(?:json)?/i, '').replace(/```\s*$/i, '').trim()
@@ -104,7 +106,7 @@ export class OpenAiCompatibleService implements AiService {
     const sourceBlock = sources
       .map(
         (s) =>
-          `SOURCE ${s.id}\nTítulo: ${s.title}\nURL: ${s.url}\nPublicada em: ${s.publishedAt ?? 'não informada'}\n<<<\n${(s.text ?? '').slice(0, SOURCE_CHARS)}\n>>>`,
+          `SOURCE ${s.id}\nTítulo: ${s.title}\nURL: ${s.url}\nPublicada em: ${s.publishedAt ?? 'não informada'}\n<<<\n${selectRelevantExcerpts(s.text ?? '', claims, 6000)}\n>>>`,
       )
       .join('\n\n')
     const user = `AFIRMAÇÕES:\n${JSON.stringify(claims)}\n\nFONTES LIDAS:\n${sourceBlock}`

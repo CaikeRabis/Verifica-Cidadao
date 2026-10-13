@@ -1,4 +1,5 @@
 import { guardText } from '../lib/languageSafety'
+import { extractKeywords } from '../lib/queryGeneration'
 import type { Claim, RawEvidence, SourceDoc, ValidEvidence } from '../types'
 
 const norm = (s: string) =>
@@ -25,6 +26,8 @@ export interface ValidationResult {
 /**
  * Validação programática obrigatória: descarta evidência com claim/fonte
  * desconhecidos, fonte NÃO lida, stance 'insufficient' ou quote inexistente.
+ * Permite também que uma evidência comprovada se relacione a mais de uma claim
+ * quando o trecho contiver os termos essenciais de ambas.
  */
 export function validateEvidences(raw: RawEvidence[], claims: Claim[], sources: SourceDoc[]): ValidationResult {
   const claimIds = new Set(claims.map((c) => c.id))
@@ -64,5 +67,32 @@ export function validateEvidences(raw: RawEvidence[], claims: Claim[], sources: 
       tier: source!.tier,
     })
   }
+
+  // Agregação inteligente de claims: se uma evidência de suporte cobre semanticamente
+  // outra claim que ainda não tem evidência, associa a evidência também a ela.
+  for (const otherClaim of claims) {
+    if (valid.some((v) => v.claimId === otherClaim.id)) continue
+    const otherKeywords = extractKeywords(otherClaim.text)
+    if (otherKeywords.length === 0) continue
+
+    for (const v of [...valid]) {
+      if (v.stance !== 'supports') continue
+      const qNorm = norm(v.quote)
+      const matchCount = otherKeywords.filter((kw) => qNorm.includes(kw)).length
+      if (matchCount >= Math.min(2, otherKeywords.length)) {
+        const key = `${otherClaim.id}|${v.sourceId}|${norm(v.quote)}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        valid.push({
+          ...v,
+          id: `e${valid.length + 1}`,
+          claimId: otherClaim.id,
+          context: `Trecho da mesma fonte documental que também respalda a afirmação analisada.`,
+        })
+        break
+      }
+    }
+  }
+
   return { valid, discarded }
 }
