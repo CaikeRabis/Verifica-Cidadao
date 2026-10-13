@@ -21,6 +21,7 @@ import { classify } from './classification'
 import { validateEvidences } from './evidenceValidation'
 import type { SearchProvider } from './searchService'
 import { defaultFetcher, readSources, type PageFetcher } from './sourceReader'
+import { PIPELINE_VERSION } from '../version'
 
 export interface VerificationDeps {
   ai: AiService
@@ -29,8 +30,6 @@ export interface VerificationDeps {
   now?: () => Date
   maxSources?: number
 }
-
-const PIPELINE_VERSION = '0.1' as const
 
 const SUMMARY: Record<Classification, string> = {
   confirmada: 'As fontes lidas sustentam a afirmação analisada.',

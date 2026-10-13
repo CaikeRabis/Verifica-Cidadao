@@ -75,6 +75,11 @@ export function validatePublicUrl(raw: string): URL {
   return url
 }
 
+/** Resolve e valida cada destino de redirect antes de iniciar o próximo salto. */
+export function resolveSafeRedirect(location: string, current: URL): URL {
+  return validatePublicUrl(new URL(location, current).toString())
+}
+
 /**
  * `lookup` que valida o IP resolvido NO MOMENTO DA CONEXÃO — protege contra
  * hostnames públicos que resolvem para IPs internos (incl. DNS rebinding).
@@ -227,7 +232,7 @@ export async function fetchText(raw: string, opts: FetchOptions = {}): Promise<F
     const url = validatePublicUrl(current)
     const res = await requestOnce(url, deadline - Date.now(), maxBytes, opts.headers)
     if (res.redirect) {
-      current = new URL(res.redirect, url).toString()
+      current = resolveSafeRedirect(res.redirect, url).toString()
       continue
     }
     return res

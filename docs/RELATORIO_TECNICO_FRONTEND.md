@@ -15,8 +15,8 @@ O CONTEXTO MESTRE descreve **o que o produto deve ser**. Este relatório descrev
 - Front-end base navegável, feito em **React + TypeScript + Vite + React Router**, sem bibliotecas de UI.
 - Identidade visual aplicada a partir do Manual da Marca: cores, tipografia, cantos arredondados, cards.
 - **Verificador funcional com dados simulados (mock).** Permite ver as 5 classificações, além dos estados de carregamento, erro e campo vazio.
-- Sem backend, banco de dados, autenticação, IA real ou APIs externas, conforme o escopo da Fase 1.
-- A camada de serviço já está isolada. Para trocar o mock por uma API real, basta alterar **um arquivo**.
+- O frontend está integrado ao backend real por `POST /api/verify`, com mock preservado como contingência e modo demonstração.
+- Sem banco de dados ou autenticação; a IA e a busca são executadas somente no backend, nunca no navegador.
 - Página **"Em construção"** estática e separada (`em-construcao/`), pronta para publicar no domínio enquanto o produto não é lançado.
 - Logos refeitas a partir do arquivo oficial em alta qualidade, com fundo transparente e sem slogan.
 
@@ -36,7 +36,7 @@ Verifica-Cidadao/
 ```
 
 > [!NOTE]
-> O projeto **ainda não é um repositório Git**. Recomenda-se inicializar o versionamento antes da próxima etapa (ver seção 9).
+> O projeto é versionado em Git. O backend real foi incluído após a Fase 1 e o relatório deve ser lido como histórico da base visual, não como descrição completa do estado atual.
 
 ---
 

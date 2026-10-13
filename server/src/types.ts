@@ -89,7 +89,7 @@ export interface ApiEvidence {
 export interface VerificationResult {
   id: string
   requestId: string
-  pipelineVersion: '0.1'
+  pipelineVersion: typeof PIPELINE_VERSION
   query: string
   classification: Classification
   summary: string
@@ -102,3 +102,4 @@ export interface VerificationResult {
   sources: ApiSource[]
   analyzedAt: string
 }
+import type { PIPELINE_VERSION } from './version'

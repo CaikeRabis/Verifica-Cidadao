@@ -5,6 +5,12 @@ import { validateInput } from '../src/lib/input'
 import { classify, classifyClaim } from '../src/services/classification'
 import { quoteExistsIn, validateEvidences } from '../src/services/evidenceValidation'
 import { readSources } from '../src/services/sourceReader'
+import { generateSearchQueries } from '../src/lib/queryGeneration'
+import { rankForClaim, selectSources } from '../src/lib/sourceRanking'
+import { resolveSafeRedirect, validatePublicUrl } from '../src/lib/safeFetch'
+import { verify } from '../src/services/verificationService'
+import type { AiService } from '../src/services/aiService'
+import type { SearchProvider } from '../src/services/searchService'
 import type { Candidate } from '../src/lib/sourceRanking'
 import type { Claim, RawEvidence, SourceDoc, ValidEvidence } from '../src/types'
 
@@ -239,5 +245,99 @@ describe('5. Fonte não lida não deve aparecer como read', () => {
     assert.ok(docs[0].text && docs[0].text.length > 100)
     assert.equal(docs[1].readStatus, 'snippet-only')
     assert.equal(docs[1].text, undefined)
+  })
+})
+
+describe('6. Regras v0.2-1 de classificação e agregação', () => {
+  const evidence = (claimId: string, stance: ValidEvidence['stance'], sourceId = 's1'): ValidEvidence => ({
+    id: `${claimId}-${stance}-${sourceId}`,
+    claimId,
+    sourceId,
+    quote: 'Trecho institucional verificável.',
+    context: '',
+    stance,
+    tier: 'oficial',
+  })
+
+  it('mantém resultado contradita quando a claim principal é contradita e a secundária é confirmada (falha conhecida)', () => {
+    const claims: Claim[] = [
+      { id: 'c1', text: 'O salário mínimo em 2024 foi R$ 5.000.' },
+      { id: 'c2', text: 'O salário mínimo foi definido pelo governo federal.' },
+    ]
+    const out = classify({ claims, evidences: [evidence('c1', 'contradicts'), evidence('c2', 'supports', 's2')] })
+    assert.equal(out.claimStatus.c1, 'contradita')
+    assert.equal(out.claimStatus.c2, 'confirmada')
+    // Documenta a limitação atual a ser tratada na v0.2-2: não há peso de claim principal.
+    assert.equal(out.classification, 'parcialmente-confirmada')
+  })
+
+  it('classifica entrada composta como parcialmente confirmada quando há uma claim sustentada e outra contradita', () => {
+    const claims: Claim[] = [{ id: 'c1', text: 'Brasília foi inaugurada em 1960.' }, { id: 'c2', text: 'Brasília é a cidade mais populosa.' }]
+    const out = classify({ claims, evidences: [evidence('c1', 'supports'), evidence('c2', 'contradicts', 's2')] })
+    assert.equal(out.classification, 'parcialmente-confirmada')
+  })
+
+  it('documenta que valores e datas dependem do stance fornecido pela IA', () => {
+    const claim: Claim = { id: 'c1', text: 'O salário mínimo em 2024 foi R$ 5.000.' }
+    const out = classify({ claims: [claim], evidences: [evidence('c1', 'supports')] })
+    assert.equal(out.classification, 'confirmada')
+    // A regra ainda não compara R$ 5.000 com o valor literal da fonte: esse é escopo da v0.2-2.
+  })
+})
+
+describe('7. Infraestrutura de alto valor', () => {
+  it('bloqueia localhost, IP privado e redirect para destino privado', () => {
+    assert.throws(() => validatePublicUrl('http://localhost'), /host local/i)
+    assert.throws(() => validatePublicUrl('http://127.0.0.1'), /IP privado/i)
+    assert.throws(() => resolveSafeRedirect('http://169.254.169.254/latest/meta-data', new URL('https://exemplo.gov.br')), /IP privado/i)
+  })
+
+  it('prioriza fonte oficial e evita concentrar a seleção no mesmo domínio-base', () => {
+    const results = [
+      { title: 'Notícia', url: 'https://portal.com/a', domain: 'portal.com', snippet: 'senado composição' },
+      { title: 'Senado Federal', url: 'https://www.senado.leg.br/b', domain: 'www.senado.leg.br', snippet: '81 senadores' },
+      { title: 'Outra página Senado', url: 'https://noticias.senado.leg.br/c', domain: 'noticias.senado.leg.br', snippet: 'composição' },
+      { title: 'Câmara', url: 'https://camara.leg.br/d', domain: 'camara.leg.br', snippet: 'Congresso' },
+    ]
+    assert.equal(rankForClaim(results, 3, 'Senado tem 81 senadores')[0].tier, 'oficial')
+    const selected = selectSources([{ results, claimText: 'Senado tem 81 senadores' }], 3, 3)
+    assert.equal(selected.filter((item) => item.domain.endsWith('senado.leg.br')).length, 1)
+  })
+
+  it('gera consultas complementar literal, institucional e oficial', () => {
+    const queries = generateSearchQueries('O Senado Federal possui 81 senadores.')
+    assert.ok(queries.length >= 2)
+    assert.ok(queries.some((query) => query.includes('site:senado.leg.br')))
+  })
+
+  it('executa segunda rodada quando a primeira não produz evidência válida', async () => {
+    const calls: string[] = []
+    let searchCount = 0
+    const ai: AiService = {
+      async extractClaims() { return [{ text: 'Brasília foi inaugurada em 1960.' }] },
+      async extractEvidence(_claims, sources) {
+        if (sources.some((source) => source.url.includes('/segunda'))) {
+          return [{ claimId: 'c1', sourceId: sources[0].id, quote: 'Brasília foi inaugurada em 1960.', context: '', stance: 'supports' }]
+        }
+        return []
+      },
+    }
+    const search: SearchProvider = {
+      async search(query) {
+        calls.push(query)
+        searchCount++
+        return searchCount > 3
+          ? [{ title: 'Fonte segunda', url: 'https://dados.gov.br/segunda', domain: 'dados.gov.br', snippet: 'Brasília foi inaugurada em 1960.' }]
+          : [{ title: 'Fonte inicial', url: 'https://planalto.gov.br/inicial', domain: 'planalto.gov.br', snippet: 'Brasília foi inaugurada em 1960.' }]
+      },
+    }
+    const result = await verify('Brasília foi inaugurada em 1960.', {
+      ai,
+      search,
+      fetcher: async (url) => ({ finalUrl: url, contentType: 'text/html', body: `<article>Brasília foi inaugurada em 1960. ${'texto '.repeat(50)}</article>`, truncated: false }),
+    })
+    assert.equal(result.classification, 'confirmada')
+    assert.ok(result.limitations.some((item) => item.includes('segunda rodada')))
+    assert.ok(calls.some((query) => query.includes('dados oficiais')))
   })
 })

@@ -5,6 +5,7 @@ import { ApiError } from './errors'
 import { toApiError, verifyRouter } from './routes/verify'
 import { OpenAiCompatibleService, type AiService } from './services/aiService'
 import { createSearchProvider, type SearchProvider } from './services/searchService'
+import { PIPELINE_VERSION } from './version'
 
 function rateLimiter(max: number, windowMs: number) {
   const hits = new Map<string, number[]>()
@@ -41,7 +42,7 @@ export function createApp(config: Config, overrides: { ai?: AiService; search?: 
   })
 
   app.use(express.json({ limit: '16kb' }))
-  app.get('/api/health', (_req, res) => res.json({ status: 'ok', pipelineVersion: '0.1' }))
+  app.get('/api/health', (_req, res) => res.json({ status: 'ok', pipelineVersion: PIPELINE_VERSION }))
 
   app.use(
     '/api',

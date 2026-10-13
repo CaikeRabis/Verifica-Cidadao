@@ -32,3 +32,6 @@ dist-ssr
 # Build e cache
 app/dist
 app/node_modules
+
+# Relatórios locais gerados pelo runner do golden set
+server/test/golden/results/
