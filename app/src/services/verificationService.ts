@@ -5,9 +5,10 @@ import type { Classification, VerificationResult } from '../types'
 /**
  * Camada de serviço da verificação.
  *
- * ⚠️ MOCK: nesta fase nenhuma IA ou API é chamada. Para integrar o backend,
- * basta substituir o corpo de `verifyInformation` por uma chamada HTTP que
- * retorne um `VerificationResult` — o restante da interface não muda.
+ * Integra com o backend real em POST /api/verify.
+ * Se VITE_USE_MOCK_VERIFICATION='true' ou se a consulta contiver tags de teste
+ * (como as disparadas pelos botões de simulação do painel demonstrativo),
+ * executa o mock local preservando todos os cenários prévios de demonstração.
  */
 
 export class VerificationError extends Error {}
@@ -41,13 +42,12 @@ const detectDemoState = (
 
 let counter = 0
 
-export async function verifyInformation(
+async function mockVerification(
   query: string,
-  forced?: Classification,
+  demo: Classification | 'erro' | 'fonte-indisponivel' | 'formato-invalido' | null,
 ): Promise<VerificationResult> {
-  await wait(1800 + Math.random() * 800)
+  await wait(1200 + Math.random() * 600)
 
-  const demo = forced ?? detectDemoState(query)
   if (demo === 'erro') {
     throw new VerificationError('Não foi possível concluir a verificação agora.')
   }
@@ -67,4 +67,48 @@ export async function verifyInformation(
     analyzedAt: new Date().toISOString(),
     ...mockResults[classification],
   }
+}
+
+export async function verifyInformation(
+  query: string,
+  forced?: Classification,
+): Promise<VerificationResult> {
+  const demo = forced ?? detectDemoState(query)
+  const useMock = import.meta.env.VITE_USE_MOCK_VERIFICATION === 'true'
+
+  // Se o usuário clicou nos botões de simulação da barra de demonstração ou ativou a flag VITE_USE_MOCK_VERIFICATION
+  if (demo !== null || useMock) {
+    return mockVerification(query, demo)
+  }
+
+  const apiBase = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
+  let response: Response
+  try {
+    response = await fetch(`${apiBase}/api/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ input: query }),
+    })
+  } catch {
+    throw new VerificationError(
+      'Não foi possível conectar ao servidor de verificação. Verifique se o backend está em execução na porta 8787.',
+    )
+  }
+
+  const data = await response.json().catch(() => null)
+
+  if (!response.ok) {
+    const code = data?.error?.code
+    const message = data?.error?.message || 'Falha ao processar a verificação.'
+
+    if (response.status === 422 || code === 'unsupported_format') {
+      throw new UnsupportedFormatError(message)
+    }
+    if (response.status === 503 || code === 'source_unavailable') {
+      throw new SourceUnavailableError()
+    }
+    throw new VerificationError(message)
+  }
+
+  return data as VerificationResult
 }

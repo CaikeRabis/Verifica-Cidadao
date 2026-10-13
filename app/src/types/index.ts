@@ -12,6 +12,10 @@ export interface Source {
   domain: string
   description: string
   url: string
+  readStatus?: 'read' | 'snippet-only' | 'unavailable'
+  accessedAt?: string
+  tier?: 'oficial' | 'jornalismo' | 'outro'
+  publishedAt?: string
 }
 
 /** Afirmação verificável identificada a partir do texto original. */
@@ -52,6 +56,8 @@ export interface Evidence {
 
 export interface VerificationResult {
   id: string
+  requestId?: string
+  pipelineVersion?: string
   query: string
   classification: Classification
   summary: string

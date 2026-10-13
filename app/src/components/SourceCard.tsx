@@ -31,6 +31,16 @@ export default function SourceCard({ source, detailed }: Props) {
         <span className="source-card__name">{source.name}</span>
         <br />
         <span className="source-card__domain">{source.domain}</span>
+        {source.readStatus === 'read' && (
+          <span style={{ marginLeft: 8, fontSize: '0.72rem', padding: '2px 6px', borderRadius: 999, background: '#eefbf4', color: '#0b683e', fontWeight: 600 }}>
+            Página lida
+          </span>
+        )}
+        {source.readStatus && source.readStatus !== 'read' && (
+          <span style={{ marginLeft: 8, fontSize: '0.72rem', padding: '2px 6px', borderRadius: 999, background: '#f4f6f8', color: '#667085', fontWeight: 600 }}>
+            Não lida
+          </span>
+        )}
         {detailed && <p>{source.description}</p>}
       </span>
       <Icon name="external" size={18} className="source-card__ext" />

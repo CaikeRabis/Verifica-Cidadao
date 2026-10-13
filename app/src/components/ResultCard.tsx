@@ -88,14 +88,38 @@ export default function ResultCard({ result, onNew }: Props) {
           <AnalysisLimitations limitations={result.limitations} />
         )}
 
-        <section className="result__section">
-          <h4>Fontes consultadas</h4>
-          <div className="sources-grid">
-            {result.sources.map((s) => (
-              <SourceCard key={s.id} source={s} />
-            ))}
-          </div>
-        </section>
+        {/* 8. Fontes consultadas (efetivamente lidas) */}
+        {(() => {
+          const consulted = result.sources.filter((s) => !s.readStatus || s.readStatus === 'read')
+          const unread = result.sources.filter((s) => s.readStatus && s.readStatus !== 'read')
+          return (
+            <>
+              {consulted.length > 0 && (
+                <section className="result__section">
+                  <h4>Fontes consultadas</h4>
+                  <div className="sources-grid">
+                    {consulted.map((s) => (
+                      <SourceCard key={s.id} source={s} />
+                    ))}
+                  </div>
+                </section>
+              )}
+              {unread.length > 0 && (
+                <section className="result__section">
+                  <h4>Outras páginas retornadas na busca (não lidas / não utilizadas)</h4>
+                  <p style={{ fontSize: '0.88rem', color: '#5b6675', marginBottom: 10 }}>
+                    As páginas abaixo foram listadas pelo buscador, mas não puderam ser abertas ou apresentavam apenas resumo. Por transparência, não foram consideradas como evidência.
+                  </p>
+                  <div className="sources-grid">
+                    {unread.map((s) => (
+                      <SourceCard key={s.id} source={s} />
+                    ))}
+                  </div>
+                </section>
+              )}
+            </>
+          )
+        })()}
 
         <p className="result__meta">
           <Icon name="calendar" size={18} />
