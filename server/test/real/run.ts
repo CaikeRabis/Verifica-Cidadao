@@ -36,14 +36,23 @@ async function main() {
     const { category, input, expectedClassification } = testCase
     const started = performance.now()
     const trace: PipelineTrace = {
-      timingsMs: {}, queries: {}, searchResults: {}, selectedSources: [], acceptedEvidences: 0, discardedEvidences: 0,
+      timingsMs: {}, queries: {}, searchResults: {}, searchCalls: [], selectedSources: [], fetches: [], aiCalls: [],
+      evidenceCandidates: [], rejectedEvidences: [], acceptedEvidenceTrace: [], acceptedEvidences: 0, discardedEvidences: 0,
     }
     try {
       const result = await verify(input, { ...deps, trace })
       results.push({
         category, input, expectedClassification, classification: result.classification,
         passed: result.classification === expectedClassification, confidence: result.confidence,
-        claims: result.claims.map((claim) => ({ id: claim.id, text: claim.text, role: claim.role, status: claim.status })),
+        claims: result.claims.map((claim) => ({
+          id: claim.id, text: claim.text, role: claim.role, status: claim.status,
+          coverage: {
+            candidates: trace.evidenceCandidates.filter((item) => item.claimId === claim.id).length,
+            accepted: trace.acceptedEvidenceTrace.filter((item) => item.claimId === claim.id).length,
+            supports: trace.acceptedEvidenceTrace.filter((item) => item.claimId === claim.id && item.stanceFinal === 'supports').length,
+            contradicts: trace.acceptedEvidenceTrace.filter((item) => item.claimId === claim.id && item.stanceFinal === 'contradicts').length,
+          },
+        })),
         sourcesFound: result.sources.length, sourcesRead: result.sources.filter((source) => source.readStatus === 'read').length,
         sources: result.sources.map((source) => ({ title: source.title, domain: source.domain, tier: source.tier, readStatus: source.readStatus })),
         evidencesAccepted: result.evidences.map((evidence) => ({ claimId: evidence.claimId, stance: evidence.stance, source: evidence.sourceName, quote: evidence.quote })),

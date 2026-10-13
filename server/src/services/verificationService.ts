@@ -19,7 +19,7 @@ import type {
 } from '../types'
 import type { AiService } from './aiService'
 import { classify } from './classification'
-import { validateEvidences } from './evidenceValidation'
+import { validateEvidences, type EvidenceRejectionReason } from './evidenceValidation'
 import type { SearchProvider } from './searchService'
 import { defaultFetcher, readSources, type PageFetcher } from './sourceReader'
 import { PIPELINE_VERSION } from '../version'
@@ -30,9 +30,25 @@ export interface PipelineTrace {
   timingsMs: Record<string, number>
   queries: Record<string, string[]>
   searchResults: Record<string, SearchResult[]>
+  searchCalls: { claimId: string; query: string; durationMs: number; resultCount: number; providers: string[] }[]
   selectedSources: { title: string; url: string; domain: string; tier: SourceTier }[]
+  fetches: { sourceId: string; url: string; domain: string; durationMs: number; readStatus: string; bytes?: number; failureReason?: string }[]
+  aiCalls: { purpose: 'claim-extraction' | 'evidence-extraction' | 'targeted-evidence-extraction' | 'second-round-evidence-extraction'; durationMs: number }[]
+  evidenceCandidates: { evidenceCandidateId: string; claimId: string; sourceId: string; quote: string; context: string; stanceFromAI: Stance; structuredEntities: unknown[] }[]
+  rejectedEvidences: { claimId: string; sourceId: string; quote: string; reason: EvidenceRejectionReason; relevanceChecks?: Record<string, boolean | number> }[]
+  acceptedEvidenceTrace: { claimId: string; sourceId: string; quote: string; stanceFromAI: Stance; stanceFinal: Stance; stanceSource?: string; relevanceChecks: Record<string, boolean | number> }[]
   acceptedEvidences: number
   discardedEvidences: number
+}
+
+function evidenceObserver(trace?: PipelineTrace) {
+  if (!trace) return undefined
+  let index = trace.evidenceCandidates.length
+  return {
+    candidate: (item: any) => trace.evidenceCandidates.push({ evidenceCandidateId: `ec${++index}`, ...item }),
+    rejected: (item: any) => trace.rejectedEvidences.push(item),
+    accepted: (item: any) => trace.acceptedEvidenceTrace.push({ claimId: item.claimId, sourceId: item.sourceId, quote: item.quote, stanceFromAI: item.stanceFromAI, stanceFinal: item.stance, stanceSource: item.stanceSource, relevanceChecks: item.relevanceChecks }),
+  }
 }
 
 export interface VerificationDeps {
@@ -150,6 +166,7 @@ export async function verify(input: string, deps: VerificationDeps): Promise<Ver
   const claimsStarted = performance.now()
   const drafts = await deps.ai.extractClaims(input)
   deps.trace && (deps.trace.timingsMs.claimExtraction = Math.round(performance.now() - claimsStarted))
+  deps.trace?.aiCalls.push({ purpose: 'claim-extraction', durationMs: deps.trace.timingsMs.claimExtraction })
   const claims = normalizeClaims(drafts)
   if (claims.length === 0) {
     const out = classify({ claims, evidences: [] })
@@ -166,7 +183,9 @@ export async function verify(input: string, deps: VerificationDeps): Promise<Ver
     const seenUrls = new Set<string>()
     for (const q of queries) {
       try {
+        const queryStarted = performance.now()
         const results = await deps.search.search(q, 6)
+        deps.trace?.searchCalls.push({ claimId: c.id, query: q, durationMs: Math.round(performance.now() - queryStarted), resultCount: results.length, providers: [...new Set(results.map((item) => item.provider ?? 'unknown'))] })
         for (const item of results) {
           if (!seenUrls.has(item.url)) {
             seenUrls.add(item.url)
@@ -197,7 +216,7 @@ export async function verify(input: string, deps: VerificationDeps): Promise<Ver
 
   // 4. Leitura real das páginas
   const readingStarted = performance.now()
-  const sources = await readSources(selected, fetcher, () => now)
+  const sources = await readSources(selected, fetcher, () => now, 0, (event) => deps.trace?.fetches.push(event))
   deps.trace && (deps.trace.timingsMs.readSources = Math.round(performance.now() - readingStarted))
   const read = sources.filter((s) => s.readStatus === 'read')
   const unread = sources.length - read.length
@@ -219,8 +238,10 @@ export async function verify(input: string, deps: VerificationDeps): Promise<Ver
   let discarded = 0
   const evidenceStarted = performance.now()
   try {
+    const extractionStarted = performance.now()
     const raw = await deps.ai.extractEvidence(claims, read)
-    const v = validateEvidences(raw, claims, sources)
+    deps.trace?.aiCalls.push({ purpose: 'evidence-extraction', durationMs: Math.round(performance.now() - extractionStarted) })
+    const v = validateEvidences(raw, claims, sources, evidenceObserver(deps.trace))
     validEv = v.valid
     discarded = v.discarded
 
@@ -229,8 +250,10 @@ export async function verify(input: string, deps: VerificationDeps): Promise<Ver
     // páginas já lidas antes de ampliar a busca.
     const uncovered = claims.filter((claim) => !validEv.some((evidence) => evidence.claimId === claim.id))
     if (uncovered.length > 0) {
+      const focusedStarted = performance.now()
       const focusedRaw = await deps.ai.extractEvidence(uncovered, read)
-      const focused = validateEvidences(focusedRaw, uncovered, sources)
+      deps.trace?.aiCalls.push({ purpose: 'targeted-evidence-extraction', durationMs: Math.round(performance.now() - focusedStarted) })
+      const focused = validateEvidences(focusedRaw, uncovered, sources, evidenceObserver(deps.trace))
       discarded += focused.discarded
       validEv = [...validEv, ...focused.valid].map((evidence, index) => ({ ...evidence, id: `e${index + 1}` }))
     }
@@ -254,11 +277,13 @@ export async function verify(input: string, deps: VerificationDeps): Promise<Ver
         const round2Candidates = selectSources([{ results: retryMerged }], 3, 3)
         if (deps.trace) deps.trace.selectedSources.push(...round2Candidates.map((s) => ({ title: s.title, url: s.url, domain: s.domain, tier: s.tier })))
         if (round2Candidates.length > 0) {
-          const round2Sources = await readSources(round2Candidates, fetcher, () => now, sources.length)
+          const round2Sources = await readSources(round2Candidates, fetcher, () => now, sources.length, (event) => deps.trace?.fetches.push(event))
           const round2Read = round2Sources.filter((s) => s.readStatus === 'read')
           if (round2Read.length > 0) {
+            const round2Started = performance.now()
             const raw2 = await deps.ai.extractEvidence(claims, round2Read)
-            const v2 = validateEvidences(raw2, claims, [...sources, ...round2Sources])
+            deps.trace?.aiCalls.push({ purpose: 'second-round-evidence-extraction', durationMs: Math.round(performance.now() - round2Started) })
+            const v2 = validateEvidences(raw2, claims, [...sources, ...round2Sources], evidenceObserver(deps.trace))
             if (v2.valid.length > 0) {
               validEv = v2.valid
               sources.push(...round2Sources)

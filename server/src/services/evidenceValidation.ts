@@ -24,22 +24,36 @@ export interface ValidationResult {
   discarded: number
 }
 
+export type EvidenceRejectionReason =
+  | 'INVALID_STRUCTURE' | 'CLAIM_MISMATCH' | 'INVALID_SOURCE' | 'SOURCE_NOT_READ'
+  | 'QUOTE_NOT_FOUND' | 'LOW_LEXICAL_RELEVANCE' | 'ENTITY_MISMATCH'
+  | 'HISTORICAL_CONTEXT_MISMATCH' | 'DUPLICATE' | 'OTHER'
+
+export interface EvidenceValidationObserver {
+  candidate: (item: { claimId: string; sourceId: string; quote: string; context: string; stanceFromAI: RawEvidence['stance']; structuredEntities: ReturnType<typeof extractFactualEntities> }) => void
+  rejected: (item: { claimId: string; sourceId: string; quote: string; reason: EvidenceRejectionReason; relevanceChecks?: Record<string, boolean | number> }) => void
+  accepted: (item: ValidEvidence & { stanceFromAI: RawEvidence['stance']; relevanceChecks: Record<string, boolean | number> }) => void
+}
+
 const HISTORICAL_CONTEXT = /\b(inicial|hist[oó]ric[oa]|antig[oa]|[àa]\s+época|originalmente)\b/i
 
 /** Relevância mínima: a fonte pode ser confiável, mas ainda não responder à claim. */
-function isRelevantToClaim(claim: Claim, quote: string, stance: RawEvidence['stance'], factual: ReturnType<typeof compareFactualClaim>): boolean {
+function relevance(claim: Claim, quote: string, stance: RawEvidence['stance'], factual: ReturnType<typeof compareFactualClaim>) {
   const claimWords = extractKeywords(claim.text).filter((word) => word.length >= 3 && !/^\d/.test(word))
   const quoteWords = new Set(extractKeywords(quote))
   const overlap = claimWords.filter((word) => quoteWords.has(word)).length
-  if (overlap < 2) return false
+  const numericRequired = extractFactualEntities(claim.text).length > 0
+  const historicalConflict = stance === 'supports' && HISTORICAL_CONTEXT.test(quote) && !HISTORICAL_CONTEXT.test(claim.text)
+  const checks = { lexicalOverlap: overlap >= 2, lexicalOverlapCount: overlap, entityMatch: !!factual, numericRequired, historicalConflict }
+  if (overlap < 2) return { ok: false, reason: 'LOW_LEXICAL_RELEVANCE' as const, checks }
 
   // Claims quantitativas exigem comparação objetiva; texto com número em outro
   // contexto (ou número por extenso) não pode virar suporte por decisão da IA.
-  if (extractFactualEntities(claim.text).length > 0 && !factual) return false
+  if (numericRequired && !factual) return { ok: false, reason: 'ENTITY_MISMATCH' as const, checks }
   // Uma composição histórica não comprova a composição atual quando a claim não
   // traz esse recorte temporal.
-  if (stance === 'supports' && HISTORICAL_CONTEXT.test(quote) && !HISTORICAL_CONTEXT.test(claim.text)) return false
-  return true
+  if (historicalConflict) return { ok: false, reason: 'HISTORICAL_CONTEXT_MISMATCH' as const, checks }
+  return { ok: true, checks }
 }
 
 /**
@@ -48,7 +62,7 @@ function isRelevantToClaim(claim: Claim, quote: string, stance: RawEvidence['sta
  * Permite também que uma evidência comprovada se relacione a mais de uma claim
  * quando o trecho contiver os termos essenciais de ambas.
  */
-export function validateEvidences(raw: RawEvidence[], claims: Claim[], sources: SourceDoc[]): ValidationResult {
+export function validateEvidences(raw: RawEvidence[], claims: Claim[], sources: SourceDoc[], observer?: EvidenceValidationObserver): ValidationResult {
   const claimIds = new Set(claims.map((c) => c.id))
   const bySource = new Map(sources.map((s) => [s.id, s]))
   const valid: ValidEvidence[] = []
@@ -58,33 +72,30 @@ export function validateEvidences(raw: RawEvidence[], claims: Claim[], sources: 
 
   for (const e of raw) {
     const source = bySource.get(e.sourceId)
-    const ok =
-      claimIds.has(e.claimId) &&
-      !!source &&
-      source.readStatus === 'read' &&
-      !!source.text &&
-      quoteExistsIn(e.quote, source.text)
-    if (!ok) {
-      discarded++
-      continue
-    }
+    observer?.candidate({ ...e, stanceFromAI: e.stance, structuredEntities: extractFactualEntities(e.quote) })
+    if (!claimIds.has(e.claimId)) { discarded++; observer?.rejected({ ...e, reason: 'CLAIM_MISMATCH' }); continue }
+    if (!source) { discarded++; observer?.rejected({ ...e, reason: 'INVALID_SOURCE' }); continue }
+    if (source.readStatus !== 'read' || !source.text) { discarded++; observer?.rejected({ ...e, reason: 'SOURCE_NOT_READ' }); continue }
+    if (!quoteExistsIn(e.quote, source.text)) { discarded++; observer?.rejected({ ...e, reason: 'QUOTE_NOT_FOUND' }); continue }
     const claim = claims.find((c) => c.id === e.claimId)!
     const factual = compareFactualClaim(claim.text, e.quote)
     const stance = factual?.stance ?? e.stance
-    if (!isRelevantToClaim(claim, e.quote, stance, factual)) {
+    const relevanceResult = relevance(claim, e.quote, stance, factual)
+    if (!relevanceResult.ok) {
       discarded++
+      observer?.rejected({ ...e, reason: relevanceResult.reason!, relevanceChecks: relevanceResult.checks })
       continue
     }
     if (stance === 'insufficient') continue // lida, mas irrelevante: não é exibida como evidência
     const key = `${e.claimId}|${e.sourceId}|${norm(e.quote)}`
-    if (seen.has(key) || (perClaim.get(e.claimId) ?? 0) >= 4) continue
+    if (seen.has(key) || (perClaim.get(e.claimId) ?? 0) >= 4) { observer?.rejected({ ...e, reason: 'DUPLICATE', relevanceChecks: relevanceResult.checks }); continue }
     seen.add(key)
     perClaim.set(e.claimId, (perClaim.get(e.claimId) ?? 0) + 1)
 
     // valores só são mantidos se aparecem no texto lido
     const inText = (v?: string) => (v && norm(source!.text!).includes(norm(v)) ? v : undefined)
     const context = e.context ? guardText(e.context, 'Trecho da fonte relacionado à afirmação analisada.').text : ''
-    valid.push({
+    const accepted: ValidEvidence = {
       ...e,
       stance,
       context,
@@ -93,7 +104,9 @@ export function validateEvidences(raw: RawEvidence[], claims: Claim[], sources: 
       id: `e${valid.length + 1}`,
       tier: source!.tier,
       stanceSource: factual ? 'deterministic' : 'ai',
-    })
+    }
+    valid.push(accepted)
+    observer?.accepted({ ...accepted, stanceFromAI: e.stance, relevanceChecks: relevanceResult.checks })
   }
 
   return { valid, discarded }

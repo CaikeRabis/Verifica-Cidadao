@@ -43,7 +43,7 @@ export class BraveSearchProvider implements SearchProvider {
         title: stripTags(r.title ?? '') || domainOf(r.url!),
         url: r.url!,
         domain: domainOf(r.url!),
-        snippet: stripTags(r.description ?? '').slice(0, 300),
+        snippet: stripTags(r.description ?? '').slice(0, 300), provider: 'brave' as const,
       }))
     searchCache.set(cacheKey, results)
     return results
@@ -71,7 +71,7 @@ async function searchWikipediaFallback(query: string, limit: number): Promise<Se
           title,
           url: pageUrl,
           domain: 'pt.wikipedia.org',
-          snippet: stripTags(it.snippet ?? '').slice(0, 300),
+          snippet: stripTags(it.snippet ?? '').slice(0, 300), provider: 'wikipedia-fallback' as const,
         }
       })
     } catch {
@@ -155,7 +155,7 @@ export class DuckDuckGoDemoProvider implements SearchProvider {
       }
       if (!http2xx(url)) continue
       const snippet = block.match(/class="result__snippet"[^>]*>([\s\S]*?)<\/(?:a|div)>/i)?.[1] ?? ''
-      out.push({ title: stripTags(link[2]).slice(0, 200) || domainOf(url), url, domain: domainOf(url), snippet: stripTags(snippet).slice(0, 300) })
+      out.push({ title: stripTags(link[2]).slice(0, 200) || domainOf(url), url, domain: domainOf(url), snippet: stripTags(snippet).slice(0, 300), provider: 'duckduckgo' })
       if (out.length >= limit) break
     }
 

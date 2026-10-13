@@ -66,4 +66,15 @@ describe('Comparação factual determinística v0.2.1', () => {
     assert.equal(valid.length, 0)
     assert.equal(discarded, 1)
   })
+
+  it('expõe motivo codificado para toda evidência rejeitada quando há observador', () => {
+    const claims: Claim[] = [{ id: 'c1', text: 'O Senado possui 81 senadores.', role: 'primary' }]
+    const rejected: string[] = []
+    validateEvidences([{ claimId: 'c1', sourceId: 's1', quote: 'Citação inexistente e suficientemente longa.', context: '', stance: 'supports' }], claims, [{
+      id: 's1', title: 'Fonte', url: 'https://senado.leg.br/x', domain: 'senado.leg.br', tier: 'oficial', readStatus: 'read', accessedAt: '', text: 'Texto lido sem a citação proposta.',
+    }], {
+      candidate() {}, accepted() {}, rejected: (item) => rejected.push(item.reason),
+    })
+    assert.deepEqual(rejected, ['QUOTE_NOT_FOUND'])
+  })
 })
