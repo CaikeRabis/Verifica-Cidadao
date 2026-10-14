@@ -150,6 +150,7 @@ export function validateEvidences(raw: RawEvidence[], claims: Claim[], sources: 
       id: `e${valid.length + 1}`,
       tier: source!.tier,
       stanceSource: factual ? 'deterministic' : 'ai',
+      evidenceSource: e.evidenceSource ?? 'ai',
     }
     valid.push(accepted)
     observer?.accepted({ ...accepted, stanceFromAI: e.stance, relevanceChecks: relevanceResult.checks })

@@ -11,6 +11,7 @@ import { resolveSafeRedirect, validatePublicUrl } from '../src/lib/safeFetch'
 import { normalizeClaims, verify, type PipelineTrace } from '../src/services/verificationService'
 import type { AiService } from '../src/services/aiService'
 import { ControlledFallbackSearchProvider, type SearchProvider } from '../src/services/searchService'
+import { recoverDeterministicEvidence } from '../src/services/deterministicEvidenceRecovery'
 import type { Candidate } from '../src/lib/sourceRanking'
 import type { Claim, RawEvidence, SourceDoc, ValidEvidence } from '../src/types'
 
@@ -18,7 +19,7 @@ function pipelineTrace(): PipelineTrace {
   return {
     timingsMs: {}, queries: {}, searchResults: {}, searchCalls: [], searchAttempts: [], selectedSources: [], fetches: [], aiCalls: [],
     evidenceCandidates: [], rejectedEvidences: [], acceptedEvidenceTrace: [], windows: [], acceptedEvidences: 0, discardedEvidences: 0,
-    retries: { extraAiCalls: 0, evidence: [] },
+    retries: { extraAiCalls: 0, evidence: [] }, deterministicRecoveries: [],
   }
 }
 
@@ -619,5 +620,78 @@ describe('9. Fallback operacional DDG → Brave', () => {
     assert.equal(output.classification, 'sem-evidencias')
     assert.ok(trace.searchAttempts.some((attempt) => attempt.provider === 'brave' && attempt.success))
     assert.ok(trace.searchAttempts.every((attempt) => !JSON.stringify(attempt).includes('BRAVE_API_KEY')))
+  })
+})
+
+describe('10. Recuperação determinística de evidência estruturada', () => {
+  const claim: Claim = { id: 'c1', text: 'O salário mínimo nacional em 2024 foi de R$ 5.000.', role: 'primary' }
+  const literal = 'A partir de 1º de janeiro de 2024, o valor do salário mínimo será de R$ 1.412,00.'
+  const source: SourceDoc = {
+    id: 's1', title: 'Decreto', url: 'https://planalto.gov.br/decreto', domain: 'planalto.gov.br', tier: 'oficial',
+    readStatus: 'read', accessedAt: '2024-01-01T00:00:00.000Z', text: literal,
+  }
+
+  it('recupera literalmente o fato estruturado e preserva a contradição', () => {
+    const recovered = recoverDeterministicEvidence(claim, [source])
+    assert.equal(recovered.evidence?.quote, literal)
+    assert.equal(recovered.evidence?.stance, 'contradicts')
+    assert.equal(recovered.evidence?.evidenceSource, 'deterministic-window')
+    assert.equal(recovered.trace.deterministicEvidenceRecovered, true)
+    assert.equal(source.text?.includes(recovered.evidence?.quote ?? ''), true)
+  })
+
+  it('não recupera quando o objeto, o período ou a entidade divergem', () => {
+    const differentObject = { ...source, text: 'Em 2024, o salário de benefício será de R$ 1.412,00.' }
+    const differentPeriod = { ...source, text: 'Em 2023, o valor do salário mínimo será de R$ 1.412,00.' }
+    const differentEntity = { ...source, text: 'Em 2024, o Senado terá R$ 1.412,00 destinados a ministros.' }
+    assert.equal(recoverDeterministicEvidence(claim, [differentObject]).evidence, undefined)
+    assert.equal(recoverDeterministicEvidence(claim, [differentPeriod]).evidence, undefined)
+    assert.equal(recoverDeterministicEvidence(claim, [differentEntity]).evidence, undefined)
+  })
+
+  it('não recupera quando há mais de um valor estruturado no mesmo trecho', () => {
+    const ambiguous = { ...source, text: 'Em 2024, o valor do salário mínimo será de R$ 1.412,00 e o valor diário será de R$ 47,07.' }
+    assert.equal(recoverDeterministicEvidence(claim, [ambiguous]).evidence, undefined)
+    assert.equal(recoverDeterministicEvidence(claim, [ambiguous]).trace.recoveryReason, 'NO_LITERAL_STRUCTURED_FACT')
+  })
+
+  it('não recupera se só seria possível parafrasear o fato', () => {
+    const indirect = { ...source, text: 'Em 2024, o governo publicou normas sobre o salário mínimo.' }
+    assert.equal(recoverDeterministicEvidence(claim, [indirect]).evidence, undefined)
+  })
+
+  it('só roda após IA e retry falharem, sem nova busca, fetch ou IA', async () => {
+    let searches = 0; let fetches = 0; let evidenceCalls = 0
+    const trace = pipelineTrace()
+    const output = await verify(claim.text, {
+      ai: {
+        async extractClaims() { return [claim] },
+        async extractEvidence() { evidenceCalls++; return [] },
+      },
+      search: { async search() { searches++; return [{ title: source.title, url: source.url, domain: source.domain, snippet: literal }] } },
+      fetcher: async (url) => { fetches++; return { finalUrl: url, contentType: 'text/html', body: `<article>${source.text} ${'registro '.repeat(50)}</article>`, truncated: false } },
+      trace,
+    })
+    assert.equal(output.classification, 'contradita')
+    assert.equal(evidenceCalls, 2)
+    assert.equal(searches, 3)
+    assert.equal(fetches, 1)
+    assert.equal(trace.deterministicRecoveries[0]?.deterministicEvidenceRecovered, true)
+    assert.equal(trace.acceptedEvidenceTrace[0]?.evidenceSource, 'deterministic-window')
+  })
+
+  it('não é acionada quando a IA já entregou um quote válido', async () => {
+    const trace = pipelineTrace()
+    const output = await verify(claim.text, {
+      ai: {
+        async extractClaims() { return [claim] },
+        async extractEvidence() { return [{ claimId: 'c1', sourceId: 's1', quote: literal, context: '', stance: 'contradicts' }] },
+      },
+      search: { async search() { return [{ title: source.title, url: source.url, domain: source.domain, snippet: literal }] } },
+      fetcher: async (url) => ({ finalUrl: url, contentType: 'text/html', body: `<article>${source.text} ${'registro '.repeat(50)}</article>`, truncated: false }),
+      trace,
+    })
+    assert.equal(output.classification, 'contradita')
+    assert.equal(trace.deterministicRecoveries.length, 0)
   })
 })

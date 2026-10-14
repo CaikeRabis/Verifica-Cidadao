@@ -10,7 +10,7 @@ import type { Classification } from '../../src/types'
 
 interface UrlCase { id: string; url: string; expectedBehavior: 'success' | 'unsupported-or-unreadable'; expectedClassification?: Classification; notes: string }
 const root = resolve(import.meta.dirname, '..', '..')
-const newTrace = (): PipelineTrace => ({ timingsMs: {}, queries: {}, searchResults: {}, searchCalls: [], searchAttempts: [], selectedSources: [], fetches: [], aiCalls: [], evidenceCandidates: [], rejectedEvidences: [], acceptedEvidenceTrace: [], windows: [], acceptedEvidences: 0, discardedEvidences: 0, retries: { extraAiCalls: 0, evidence: [] } })
+const newTrace = (): PipelineTrace => ({ timingsMs: {}, queries: {}, searchResults: {}, searchCalls: [], searchAttempts: [], selectedSources: [], fetches: [], aiCalls: [], evidenceCandidates: [], rejectedEvidences: [], acceptedEvidenceTrace: [], windows: [], acceptedEvidences: 0, discardedEvidences: 0, retries: { extraAiCalls: 0, evidence: [] }, deterministicRecoveries: [] })
 
 async function main() {
   process.loadEnvFile(resolve(root, '.env'))

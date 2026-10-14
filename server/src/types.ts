@@ -12,6 +12,7 @@ export type ReadStatus = 'read' | 'snippet-only' | 'unavailable'
 export type SourceTier = 'oficial' | 'jornalismo' | 'outro'
 export type Stance = 'supports' | 'contradicts' | 'insufficient' | 'unclear'
 export type StanceSource = 'ai' | 'deterministic'
+export type EvidenceSource = 'ai' | 'deterministic-window'
 export type ClaimRole = 'primary' | 'secondary'
 export type SearchProviderName = 'brave' | 'duckduckgo'
 
@@ -59,6 +60,8 @@ export interface RawEvidence {
   foundValue?: string
   allegedValue?: string
   windowId?: string
+  /** Proveniência interna; não é exposta na UI nesta versão. */
+  evidenceSource?: EvidenceSource
 }
 
 export interface ValidEvidence extends RawEvidence {
@@ -66,6 +69,7 @@ export interface ValidEvidence extends RawEvidence {
   tier: SourceTier
   /** Proveniência interna do stance; não exposta ao frontend nesta versão. */
   stanceSource?: StanceSource
+  evidenceSource?: EvidenceSource
 }
 
 // ---------- Contrato de resposta (compatível com o front) ----------

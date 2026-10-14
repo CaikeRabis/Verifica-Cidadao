@@ -27,6 +27,7 @@ import { PIPELINE_VERSION } from '../version'
 import { composeNarrative } from '../lib/resultNarrative'
 import { performance } from 'node:perf_hooks'
 import { selectRelevantWindows } from '../lib/contentWindowing'
+import { recoverDeterministicEvidence, type DeterministicRecoveryTrace } from './deterministicEvidenceRecovery'
 
 export interface PipelineTrace {
   timingsMs: Record<string, number>
@@ -39,7 +40,7 @@ export interface PipelineTrace {
   aiCalls: { purpose: 'claim-extraction' | 'evidence-extraction' | 'targeted-evidence-extraction' | 'second-round-evidence-extraction'; durationMs: number; aiAttempt: 1 | 2; retryTriggered: boolean; retryReason?: 'ZERO_VALID_CLAIMS' | 'PRIMARY_WITHOUT_VALID_EVIDENCE' }[]
   evidenceCandidates: { evidenceCandidateId: string; claimId: string; sourceId: string; windowId?: string; quote: string; context: string; stanceFromAI: Stance; structuredEntities: unknown[] }[]
   rejectedEvidences: { claimId: string; sourceId: string; quote: string; reason: EvidenceRejectionReason; relevanceChecks?: Record<string, boolean | number> }[]
-  acceptedEvidenceTrace: { claimId: string; sourceId: string; quote: string; stanceFromAI: Stance; stanceFinal: Stance; stanceSource?: string; relevanceChecks: Record<string, boolean | number> }[]
+  acceptedEvidenceTrace: { claimId: string; sourceId: string; quote: string; stanceFromAI: Stance; stanceFinal: Stance; stanceSource?: string; evidenceSource?: string; relevanceChecks: Record<string, boolean | number> }[]
   windows: { sourceId: string; windowId: string; startOffset: number; endOffset: number; score: number; matchedTerms: string[]; structuredMatches: string[]; text: string }[]
   acceptedEvidences: number
   discardedEvidences: number
@@ -48,6 +49,7 @@ export interface PipelineTrace {
     claims?: { aiAttempt: 1 | 2; retryTriggered: boolean; retryReason?: 'ZERO_VALID_CLAIMS' }
     evidence: { claimId: string; aiAttempt: 1 | 2; retryTriggered: boolean; retryReason?: 'PRIMARY_WITHOUT_VALID_EVIDENCE'; reusedSources: string[]; reusedWindowIds: string[]; candidatesAttempt1: number; candidatesAttempt2?: number; acceptedAttempt1: number; acceptedAttempt2?: number }[]
   }
+  deterministicRecoveries: DeterministicRecoveryTrace[]
 }
 
 function evidenceObserver(trace?: PipelineTrace) {
@@ -56,7 +58,7 @@ function evidenceObserver(trace?: PipelineTrace) {
   return {
     candidate: (item: any) => trace.evidenceCandidates.push({ evidenceCandidateId: `ec${++index}`, ...item }),
     rejected: (item: any) => trace.rejectedEvidences.push(item),
-    accepted: (item: any) => trace.acceptedEvidenceTrace.push({ claimId: item.claimId, sourceId: item.sourceId, quote: item.quote, stanceFromAI: item.stanceFromAI, stanceFinal: item.stance, stanceSource: item.stanceSource, relevanceChecks: item.relevanceChecks }),
+    accepted: (item: any) => trace.acceptedEvidenceTrace.push({ claimId: item.claimId, sourceId: item.sourceId, quote: item.quote, stanceFromAI: item.stanceFromAI, stanceFinal: item.stance, stanceSource: item.stanceSource, evidenceSource: item.evidenceSource, relevanceChecks: item.relevanceChecks }),
   }
 }
 
@@ -333,6 +335,21 @@ export async function verify(input: string, deps: VerificationDeps, options: Ver
             acceptedAttempt2: focused.valid.filter((item) => item.claimId === claim.id).length,
           })
         }
+      }
+    }
+
+    // Último recurso local: só depois das duas tentativas da IA e somente para
+    // a primary ainda descoberta. A recuperação usa um trecho literal de uma
+    // janela já lida; não aciona rede, busca nem uma terceira chamada de IA.
+    const uncoveredPrimary = claims.filter((claim) => claim.role === 'primary' && !validEv.some((evidence) => evidence.claimId === claim.id))
+    for (const claim of uncoveredPrimary) {
+      const recovered = recoverDeterministicEvidence(claim, read)
+      deps.trace?.deterministicRecoveries.push(recovered.trace)
+      if (!recovered.evidence) continue
+      const recoveredValidation = validateEvidences([recovered.evidence], [claim], sources, evidenceObserver(deps.trace))
+      discarded += recoveredValidation.discarded
+      if (recoveredValidation.valid.length > 0) {
+        validEv = [...validEv, ...recoveredValidation.valid].map((evidence, index) => ({ ...evidence, id: `e${index + 1}` }))
       }
     }
 
