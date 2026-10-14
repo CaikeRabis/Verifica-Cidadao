@@ -118,7 +118,14 @@ export function validateEvidences(raw: RawEvidence[], claims: Claim[], sources: 
     if (!quoteExistsIn(e.quote, source.text)) { discarded++; observer?.rejected({ ...e, reason: 'QUOTE_NOT_IN_SOURCE' }); continue }
     const claim = claims.find((c) => c.id === e.claimId)!
     const factual = compareFactualClaim(canonical(claim.text), canonical(e.quote))
-    const stance = factual?.stance ?? e.stance
+    // Um número incompatível em tema correlato não contradiz, por si só, uma
+    // alegação institucional subespecificada. Se a IA marcou o trecho como
+    // insuficiente e não há entidade institucional compartilhada, preserva-se
+    // essa cautela em vez de promover para contradita deterministicamente.
+    const lacksInstitutionalEntity = !extractKeywords(canonical(claim.text)).some((word) => ['stf', 'senado', 'camara', 'sus', 'df'].includes(word) && extractKeywords(canonical(e.quote)).includes(word))
+    const stance = factual?.stance === 'contradicts' && e.stance === 'insufficient' && lacksInstitutionalEntity
+      ? 'insufficient'
+      : factual?.stance ?? e.stance
     const relevanceResult = relevance(claim, e.quote, stance, factual)
     if (!relevanceResult.ok) {
       discarded++
