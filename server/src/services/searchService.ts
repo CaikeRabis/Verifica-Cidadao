@@ -1,5 +1,5 @@
 import type { Config } from '../config'
-import { SearchUnavailableError } from '../errors'
+import { SearchUnavailableError, type SearchFailureReason } from '../errors'
 import { decodeEntities, stripTags } from '../lib/html'
 import { fetchText } from '../lib/safeFetch'
 import { domainOf } from '../lib/sourceRanking'
@@ -7,6 +7,18 @@ import type { SearchResult } from '../types'
 
 export interface SearchProvider {
   search(query: string, limit: number): Promise<SearchResult[]>
+  /** Consome tentativas da última busca; usado somente na telemetria interna. */
+  takeAttempts?(): SearchAttempt[]
+}
+
+export interface SearchAttempt {
+  provider: 'duckduckgo' | 'brave'
+  success: boolean
+  failureReason?: SearchFailureReason
+  resultCount: number
+  fallbackTriggered: boolean
+  fallbackProvider?: 'brave'
+  fallbackResultCount?: number
 }
 
 const http2xx = (url: string) => /^https?:\/\//i.test(url)
@@ -33,10 +45,15 @@ export class BraveSearchProvider implements SearchProvider {
         signal: AbortSignal.timeout(8000),
       })
     } catch {
-      throw new SearchUnavailableError('falha de rede na busca')
+      throw new SearchUnavailableError('falha de rede na busca', 'NETWORK_FAILURE')
     }
-    if (!res.ok) throw new SearchUnavailableError(`busca respondeu ${res.status}`)
-    const json = (await res.json()) as { web?: { results?: { title?: string; url?: string; description?: string }[] } }
+    if (!res.ok) throw new SearchUnavailableError(`busca respondeu ${res.status}`, 'INVALID_PROVIDER_RESPONSE')
+    let json: { web?: { results?: { title?: string; url?: string; description?: string }[] } }
+    try {
+      json = await res.json() as typeof json
+    } catch {
+      throw new SearchUnavailableError('resposta inválida da busca', 'INVALID_PROVIDER_RESPONSE')
+    }
     const results = (json.web?.results ?? [])
       .filter((r) => r.url && http2xx(r.url))
       .map((r) => ({
@@ -50,49 +67,9 @@ export class BraveSearchProvider implements SearchProvider {
   }
 }
 
-import { extractKeywords } from '../lib/queryGeneration'
-
-/** Fallback resiliente via API oficial da Wikipédia em português (quando DuckDuckGo apresentar desafio anti-bot). */
-async function searchWikipediaFallback(query: string, limit: number): Promise<SearchResult[]> {
-  const tryWiki = async (term: string): Promise<SearchResult[]> => {
-    try {
-      const url = `https://pt.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(term)}&utf8=&format=json`
-      const res = await fetch(url, {
-        headers: { 'User-Agent': 'VerificaCidadao/0.1.1 (educativo/verificacao)' },
-        signal: AbortSignal.timeout(5000),
-      })
-      if (!res.ok) return []
-      const json = (await res.json()) as { query?: { search?: { title?: string; snippet?: string }[] } }
-      const items = json?.query?.search ?? []
-      return items.slice(0, limit).map((it) => {
-        const title = it.title ?? 'Artigo enciclopédico'
-        const pageUrl = `https://pt.wikipedia.org/wiki/${encodeURIComponent(title.replace(/\s+/g, '_'))}`
-        return {
-          title,
-          url: pageUrl,
-          domain: 'pt.wikipedia.org',
-          snippet: stripTags(it.snippet ?? '').slice(0, 300), provider: 'wikipedia-fallback' as const,
-        }
-      })
-    } catch {
-      return []
-    }
-  }
-
-  const cleanQ = query.replace(/site:\S+/g, '').trim()
-  let results = await tryWiki(cleanQ)
-  if (results.length === 0) {
-    const kw = extractKeywords(cleanQ).slice(0, 4).join(' ')
-    if (kw && kw !== cleanQ) {
-      results = await tryWiki(kw)
-    }
-  }
-  return results
-}
-
 /**
- * DuckDuckGo (HTML) — PARA DEMONSTRAÇÃO. Faz scraping do HTML público.
- * Se o DuckDuckGo retornar bloqueio por desafio de robô, ativa fallback resiliente para Wikipédia.
+ * DuckDuckGo (HTML) — provider primário. Falhas operacionais são propagadas
+ * para o adaptador central, que pode acionar Brave de modo auditável.
  */
 export class DuckDuckGoDemoProvider implements SearchProvider {
   async search(query: string, limit: number): Promise<SearchResult[]> {
@@ -121,23 +98,12 @@ export class DuckDuckGoDemoProvider implements SearchProvider {
         })
       ).body
     } catch {
-      // Falha de rede: tenta fallback da Wikipédia
-      const fallback = await searchWikipediaFallback(query, limit)
-      if (fallback.length > 0) {
-        searchCache.set(cacheKey, fallback)
-        return fallback
-      }
-      throw new SearchUnavailableError('falha ao consultar a busca')
+      throw new SearchUnavailableError('falha ao consultar a busca', 'NETWORK_FAILURE')
     }
 
-    // Se detectou desafio de robô ou falta de resultados
+    // A página sem a marca estrutural esperada é desafio anti-bot ou resposta inválida.
     if (!/result__a/.test(html)) {
-      const fallback = await searchWikipediaFallback(query, limit)
-      if (fallback.length > 0) {
-        searchCache.set(cacheKey, fallback)
-        return fallback
-      }
-      throw new SearchUnavailableError('busca sem resultados legíveis (possível bloqueio temporário)')
+      throw new SearchUnavailableError('busca sem resultados legíveis (possível bloqueio temporário)', 'ANTI_BOT_CHALLENGE')
     }
 
     const out: SearchResult[] = []
@@ -159,13 +125,9 @@ export class DuckDuckGoDemoProvider implements SearchProvider {
       if (out.length >= limit) break
     }
 
-    // Se não extraiu links úteis, tenta o fallback
+    // HTML com resultados, mas sem links utilizáveis, é falha de parsing.
     if (out.length === 0) {
-      const fallback = await searchWikipediaFallback(query, limit)
-      if (fallback.length > 0) {
-        searchCache.set(cacheKey, fallback)
-        return fallback
-      }
+      throw new SearchUnavailableError('falha ao interpretar os resultados da busca', 'RESULT_PARSING_FAILURE')
     }
 
     searchCache.set(cacheKey, out)
@@ -173,8 +135,56 @@ export class DuckDuckGoDemoProvider implements SearchProvider {
   }
 }
 
+/**
+ * Cadeia operacional explícita: DDG é primário; Brave só é chamado após uma
+ * falha técnica dele. Uma busca válida sem evidência nunca chega a este ponto.
+ */
+export class ControlledFallbackSearchProvider implements SearchProvider {
+  private attempts: SearchAttempt[] = []
+
+  constructor(
+    private primary: SearchProvider,
+    private fallback: SearchProvider,
+  ) {}
+
+  takeAttempts() {
+    const attempts = this.attempts
+    this.attempts = []
+    return attempts
+  }
+
+  async search(query: string, limit: number): Promise<SearchResult[]> {
+    try {
+      const results = await this.primary.search(query, limit)
+      this.attempts.push({ provider: 'duckduckgo', success: true, resultCount: results.length, fallbackTriggered: false })
+      return results
+    } catch (error) {
+      // Apenas falhas explicitamente classificadas pelo provider podem consumir
+      // uma consulta Brave; bugs inesperados não devem ser mascarados como busca.
+      if (!(error instanceof SearchUnavailableError)) throw error
+      const failureReason = error.reason
+      try {
+        const results = await this.fallback.search(query, limit)
+        this.attempts.push({
+          provider: 'duckduckgo', success: false, failureReason, resultCount: 0,
+          fallbackTriggered: true, fallbackProvider: 'brave', fallbackResultCount: results.length,
+        })
+        this.attempts.push({ provider: 'brave', success: true, resultCount: results.length, fallbackTriggered: true, fallbackProvider: 'brave', fallbackResultCount: results.length })
+        return results
+      } catch (fallbackError) {
+        const fallbackReason = fallbackError instanceof SearchUnavailableError ? fallbackError.reason : 'SEARCH_PROVIDER_UNAVAILABLE'
+        this.attempts.push({ provider: 'duckduckgo', success: false, failureReason, resultCount: 0, fallbackTriggered: true, fallbackProvider: 'brave', fallbackResultCount: 0 })
+        this.attempts.push({ provider: 'brave', success: false, failureReason: fallbackReason, resultCount: 0, fallbackTriggered: true, fallbackProvider: 'brave', fallbackResultCount: 0 })
+        throw new SearchUnavailableError('busca indisponível', fallbackReason)
+      }
+    }
+  }
+}
+
 export function createSearchProvider(config: Config): SearchProvider {
-  return config.searchProvider === 'brave'
-    ? new BraveSearchProvider(config.braveApiKey)
-    : new DuckDuckGoDemoProvider()
+  if (config.searchProvider === 'brave') return new BraveSearchProvider(config.braveApiKey)
+  return new ControlledFallbackSearchProvider(
+    new DuckDuckGoDemoProvider(),
+    new BraveSearchProvider(config.braveApiKey),
+  )
 }

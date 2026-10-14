@@ -37,7 +37,7 @@ async function main() {
     const { category, input, expectedClassification } = testCase
     const started = performance.now()
     const trace: PipelineTrace = {
-      timingsMs: {}, queries: {}, searchResults: {}, searchCalls: [], selectedSources: [], fetches: [], aiCalls: [],
+      timingsMs: {}, queries: {}, searchResults: {}, searchCalls: [], searchAttempts: [], selectedSources: [], fetches: [], aiCalls: [],
       evidenceCandidates: [], rejectedEvidences: [], acceptedEvidenceTrace: [], windows: [], acceptedEvidences: 0, discardedEvidences: 0,
       retries: { extraAiCalls: 0, evidence: [] },
     }
@@ -59,10 +59,12 @@ async function main() {
         sources: result.sources.map((source) => ({ title: source.title, domain: source.domain, tier: source.tier, readStatus: source.readStatus })),
         evidencesAccepted: result.evidences.map((evidence) => ({ claimId: evidence.claimId, stance: evidence.stance, source: evidence.sourceName, quote: evidence.quote })),
         evidencesDiscarded: trace.discardedEvidences,
+        searchAttempts: trace.searchAttempts,
+        braveFallbackRequests: trace.searchAttempts.filter((attempt) => attempt.provider === 'brave').length,
         trace, summary: result.summary, explanation: result.explanation, latencyMs: Math.round(performance.now() - started),
       })
     } catch (error) {
-      results.push({ category, input, expectedClassification, passed: false, error: error instanceof Error ? error.message : 'erro desconhecido', trace, latencyMs: Math.round(performance.now() - started) })
+      results.push({ category, input, expectedClassification, passed: false, error: error instanceof Error ? error.message : 'erro desconhecido', searchAttempts: trace.searchAttempts, braveFallbackRequests: trace.searchAttempts.filter((attempt) => attempt.provider === 'brave').length, trace, latencyMs: Math.round(performance.now() - started) })
     }
   }
 
@@ -72,6 +74,7 @@ async function main() {
     averageLatencyMs: Math.round(latencies.reduce((sum, latency) => sum + latency, 0) / latencies.length),
     medianLatencyMs: latencies[Math.floor(latencies.length / 2)], maxLatencyMs: latencies.at(-1),
     passed: results.filter((item) => (item as { passed?: boolean }).passed).length,
+    braveFallbackRequests: results.reduce<number>((sum, item) => sum + ((item as { braveFallbackRequests?: number }).braveFallbackRequests ?? 0), 0),
     results,
   }
   const dir = resolve(root, 'test/real/results')

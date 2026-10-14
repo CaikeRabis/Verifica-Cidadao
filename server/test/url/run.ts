@@ -10,7 +10,7 @@ import type { Classification } from '../../src/types'
 
 interface UrlCase { id: string; url: string; expectedBehavior: 'success' | 'unsupported-or-unreadable'; expectedClassification?: Classification; notes: string }
 const root = resolve(import.meta.dirname, '..', '..')
-const newTrace = (): PipelineTrace => ({ timingsMs: {}, queries: {}, searchResults: {}, searchCalls: [], selectedSources: [], fetches: [], aiCalls: [], evidenceCandidates: [], rejectedEvidences: [], acceptedEvidenceTrace: [], windows: [], acceptedEvidences: 0, discardedEvidences: 0, retries: { extraAiCalls: 0, evidence: [] } })
+const newTrace = (): PipelineTrace => ({ timingsMs: {}, queries: {}, searchResults: {}, searchCalls: [], searchAttempts: [], selectedSources: [], fetches: [], aiCalls: [], evidenceCandidates: [], rejectedEvidences: [], acceptedEvidenceTrace: [], windows: [], acceptedEvidences: 0, discardedEvidences: 0, retries: { extraAiCalls: 0, evidence: [] } })
 
 async function main() {
   process.loadEnvFile(resolve(root, '.env'))
@@ -24,13 +24,18 @@ async function main() {
       const fetchStarted = performance.now(); const page = await readAnalyzedPage(item.url); const initialUrlFetch = Math.round(performance.now() - fetchStarted)
       const result = await verify(item.url, { ...deps, trace }, { claimInput: page.text, analyzedSource: { url: page.url, finalUrl: page.finalUrl, domain: page.domain, title: page.title, publishedDate: page.publishedDate } })
       const selfReferenced = result.sources.some((source) => source.url === page.finalUrl) || result.evidences.some((evidence) => evidence.sourceUrl === page.finalUrl)
-      results.push({ id: item.id, url: item.url, expectedBehavior: item.expectedBehavior, expectedClassification: item.expectedClassification, finalUrl: page.finalUrl, title: page.title, domain: page.domain, initialUrlFetch, claims: result.claims.map((claim) => ({ text: claim.text, role: claim.role, status: claim.status })), searches: trace.searchCalls.length, verificationSources: result.sources.map((source) => source.url), evidences: result.evidences.map((evidence) => ({ sourceUrl: evidence.sourceUrl, stance: evidence.stance })), classification: result.classification, selfReferenced, passed: !selfReferenced && result.classification === item.expectedClassification, latencyMs: Math.round(performance.now() - started), timings: trace.timingsMs })
+      const searchAttempts = trace.searchAttempts
+      const braveFallbackRequests = searchAttempts.filter((attempt) => attempt.provider === 'brave').length
+      results.push({ id: item.id, url: item.url, expectedBehavior: item.expectedBehavior, expectedClassification: item.expectedClassification, finalUrl: page.finalUrl, title: page.title, domain: page.domain, initialUrlFetch, claims: result.claims.map((claim) => ({ text: claim.text, role: claim.role, status: claim.status })), searches: trace.searchCalls.length, searchAttempts, braveFallbackRequests, verificationSources: result.sources.map((source) => source.url), evidences: result.evidences.map((evidence) => ({ sourceUrl: evidence.sourceUrl, stance: evidence.stance })), classification: result.classification, selfReferenced, passed: !selfReferenced && result.classification === item.expectedClassification, latencyMs: Math.round(performance.now() - started), timings: trace.timingsMs })
     } catch (error) {
-      results.push({ id: item.id, url: item.url, expectedBehavior: item.expectedBehavior, error: error instanceof Error ? error.message : 'erro desconhecido', passed: item.expectedBehavior === 'unsupported-or-unreadable', latencyMs: Math.round(performance.now() - started) })
+      results.push({ id: item.id, url: item.url, expectedBehavior: item.expectedBehavior, error: error instanceof Error ? error.message : 'erro desconhecido', searchAttempts: trace.searchAttempts, braveFallbackRequests: trace.searchAttempts.filter((attempt) => attempt.provider === 'brave').length, passed: item.expectedBehavior === 'unsupported-or-unreadable', latencyMs: Math.round(performance.now() - started) })
     }
   }
   const ok = results.filter((item: any) => !item.error); const times = ok.map((item: any) => item.latencyMs).sort((a: number, b: number) => a - b)
-  const report = { total: results.length, passed: results.filter((item: any) => item.passed).length, averageLatencyMs: times.length ? Math.round(times.reduce((a: number, b: number) => a + b, 0) / times.length) : 0, medianLatencyMs: times[Math.floor(times.length / 2)], maxLatencyMs: times.at(-1), results }
+  const fallbackCases = results.filter((item: any) => item.braveFallbackRequests > 0)
+  const noFallbackCases = ok.filter((item: any) => item.braveFallbackRequests === 0)
+  const average = (items: any[]) => items.length ? Math.round(items.reduce((sum, item) => sum + item.latencyMs, 0) / items.length) : 0
+  const report = { total: results.length, passed: results.filter((item: any) => item.passed).length, braveFallbackRequests: results.reduce((sum: number, item: any) => sum + (item.braveFallbackRequests ?? 0), 0), averageLatencyMs: times.length ? Math.round(times.reduce((a: number, b: number) => a + b, 0) / times.length) : 0, medianLatencyMs: times[Math.floor(times.length / 2)], maxLatencyMs: times.at(-1), latencyWithoutFallbackMs: average(noFallbackCases), latencyWithFallbackMs: average(fallbackCases), results }
   const outputDir = resolve(import.meta.dirname, 'results')
   await mkdir(outputDir, { recursive: true })
   await writeFile(resolve(outputDir, 'latest.json'), `${JSON.stringify(report, null, 2)}\n`)

@@ -21,7 +21,7 @@ import type {
 import type { AiService } from './aiService'
 import { classify } from './classification'
 import { validateEvidences, type EvidenceRejectionReason } from './evidenceValidation'
-import type { SearchProvider } from './searchService'
+import type { SearchAttempt, SearchProvider } from './searchService'
 import { defaultFetcher, readSources, type PageFetcher } from './sourceReader'
 import { PIPELINE_VERSION } from '../version'
 import { composeNarrative } from '../lib/resultNarrative'
@@ -33,6 +33,7 @@ export interface PipelineTrace {
   queries: Record<string, string[]>
   searchResults: Record<string, SearchResult[]>
   searchCalls: { claimId: string; query: string; durationMs: number; resultCount: number; providers: string[] }[]
+  searchAttempts: ({ claimId: string; query: string } & SearchAttempt)[]
   selectedSources: { title: string; url: string; domain: string; tier: SourceTier }[]
   fetches: { sourceId: string; url: string; domain: string; durationMs: number; readStatus: string; bytes?: number; failureReason?: string }[]
   aiCalls: { purpose: 'claim-extraction' | 'evidence-extraction' | 'targeted-evidence-extraction' | 'second-round-evidence-extraction'; durationMs: number; aiAttempt: 1 | 2; retryTriggered: boolean; retryReason?: 'ZERO_VALID_CLAIMS' | 'PRIMARY_WITHOUT_VALID_EVIDENCE' }[]
@@ -177,6 +178,29 @@ export async function verify(input: string, deps: VerificationDeps, options: Ver
   const fetcher = deps.fetcher ?? defaultFetcher
   const base = { requestId, input, now, analyzedSource: options.analyzedSource }
   const limitations: string[] = []
+  const search = async (claimId: string, query: string, limit: number) => {
+    try {
+      const results = await deps.search.search(query, limit)
+      const attempts = deps.search.takeAttempts?.() ?? [{
+        provider: (results[0]?.provider === 'brave' ? 'brave' : 'duckduckgo') as 'brave' | 'duckduckgo',
+        success: true,
+        resultCount: results.length,
+        fallbackTriggered: false,
+      }]
+      deps.trace?.searchAttempts.push(...attempts.map((attempt) => ({ claimId, query, ...attempt })))
+      return results
+    } catch (error) {
+      const attempts = deps.search.takeAttempts?.() ?? [{
+        provider: 'duckduckgo' as const,
+        success: false,
+        failureReason: 'SEARCH_PROVIDER_UNAVAILABLE' as const,
+        resultCount: 0,
+        fallbackTriggered: false,
+      }]
+      deps.trace?.searchAttempts.push(...attempts.map((attempt) => ({ claimId, query, ...attempt })))
+      throw error
+    }
+  }
 
   // 1. Claims (falha da IA aqui interrompe: não há o que verificar)
   const claimsStarted = performance.now()
@@ -213,7 +237,7 @@ export async function verify(input: string, deps: VerificationDeps, options: Ver
     for (const q of queries) {
       try {
         const queryStarted = performance.now()
-        const results = await deps.search.search(q, 6)
+        const results = await search(c.id, q, 6)
         deps.trace?.searchCalls.push({ claimId: c.id, query: q, durationMs: Math.round(performance.now() - queryStarted), resultCount: results.length, providers: [...new Set(results.map((item) => item.provider ?? 'unknown'))] })
         for (const item of results) {
           // Conteúdo analisado nunca é fonte confirmatória de si mesmo.
@@ -319,7 +343,7 @@ export async function verify(input: string, deps: VerificationDeps, options: Ver
       for (const c of claims) {
         const kw = extractKeywords(c.text).slice(0, 5).join(' ')
         try {
-          const res = await deps.search.search(`${kw} dados oficiais`, 6)
+          const res = await search(c.id, `${kw} dados oficiais`, 6)
           for (const item of res) {
             if (options.analyzedSource && sameUrl(item.url, options.analyzedSource.finalUrl)) continue
             if (!readUrls.has(item.url) && !retryMerged.some((m) => m.url === item.url)) {

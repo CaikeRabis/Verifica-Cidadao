@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { ApiError } from '../src/errors'
+import { ApiError, SearchUnavailableError } from '../src/errors'
 import { validateInput } from '../src/lib/input'
 import { classify, classifyClaim } from '../src/services/classification'
 import { quoteExistsIn, validateEvidences } from '../src/services/evidenceValidation'
@@ -10,13 +10,13 @@ import { rankForClaim, selectSources } from '../src/lib/sourceRanking'
 import { resolveSafeRedirect, validatePublicUrl } from '../src/lib/safeFetch'
 import { normalizeClaims, verify, type PipelineTrace } from '../src/services/verificationService'
 import type { AiService } from '../src/services/aiService'
-import type { SearchProvider } from '../src/services/searchService'
+import { ControlledFallbackSearchProvider, type SearchProvider } from '../src/services/searchService'
 import type { Candidate } from '../src/lib/sourceRanking'
 import type { Claim, RawEvidence, SourceDoc, ValidEvidence } from '../src/types'
 
 function pipelineTrace(): PipelineTrace {
   return {
-    timingsMs: {}, queries: {}, searchResults: {}, searchCalls: [], selectedSources: [], fetches: [], aiCalls: [],
+    timingsMs: {}, queries: {}, searchResults: {}, searchCalls: [], searchAttempts: [], selectedSources: [], fetches: [], aiCalls: [],
     evidenceCandidates: [], rejectedEvidences: [], acceptedEvidenceTrace: [], windows: [], acceptedEvidences: 0, discardedEvidences: 0,
     retries: { extraAiCalls: 0, evidence: [] },
   }
@@ -544,5 +544,80 @@ describe('8. Retry controlado de extrações estruturadas', () => {
     assert.equal(invalidCalls, 2)
     assert.equal(invalidTrace.retries.evidence[0]?.acceptedAttempt2, 0)
     assert.ok(invalidTrace.rejectedEvidences.some((item) => item.reason === 'QUOTE_NOT_IN_SOURCE'))
+  })
+})
+
+describe('9. Fallback operacional DDG → Brave', () => {
+  const result = { title: 'Registro oficial', url: 'https://dados.gov.br/registro', domain: 'dados.gov.br', snippet: 'Registro oficial.' }
+
+  it('mantém DDG quando ele responde, sem consumir Brave', async () => {
+    let braveCalls = 0
+    const provider = new ControlledFallbackSearchProvider(
+      { async search() { return [result] } },
+      { async search() { braveCalls++; return [result] } },
+    )
+    assert.deepEqual(await provider.search('consulta', 6), [result])
+    assert.equal(braveCalls, 0)
+    assert.deepEqual(provider.takeAttempts(), [{ provider: 'duckduckgo', success: true, resultCount: 1, fallbackTriggered: false }])
+  })
+
+  it('aciona Brave somente após falha operacional do DDG e registra o motivo', async () => {
+    const provider = new ControlledFallbackSearchProvider(
+      { async search() { throw new SearchUnavailableError('desafio', 'ANTI_BOT_CHALLENGE') } },
+      { async search() { return [{ ...result, url: 'https://brave.example/fonte', domain: 'brave.example', provider: 'brave' as const }] } },
+    )
+    const results = await provider.search('consulta', 6)
+    assert.equal(results[0]?.provider, 'brave')
+    const attempts = provider.takeAttempts()
+    assert.equal(attempts[0]?.failureReason, 'ANTI_BOT_CHALLENGE')
+    assert.equal(attempts[0]?.fallbackTriggered, true)
+    assert.equal(attempts[1]?.provider, 'brave')
+    assert.equal(attempts[1]?.success, true)
+  })
+
+  it('não aciona Brave quando DDG funciona mas a evidência posterior é insuficiente', async () => {
+    let braveCalls = 0
+    const provider = new ControlledFallbackSearchProvider(
+      { async search() { return [result] } },
+      { async search() { braveCalls++; return [result] } },
+    )
+    const claimText = 'Brasília foi inaugurada em 1960.'
+    const output = await verify(claimText, {
+      ai: { async extractClaims() { return [{ text: claimText }] }, async extractEvidence() { return [] } },
+      search: provider,
+      fetcher: async (url) => ({ finalUrl: url, contentType: 'text/html', body: `<article>${'sem evidência '.repeat(50)}</article>`, truncated: false }),
+    })
+    assert.equal(output.classification, 'sem-evidencias')
+    assert.equal(braveCalls, 0)
+  })
+
+  it('falha de forma conservadora quando Brave também está indisponível', async () => {
+    const provider = new ControlledFallbackSearchProvider(
+      { async search() { throw new SearchUnavailableError('rede', 'NETWORK_FAILURE') } },
+      { async search() { throw new SearchUnavailableError('brave fora', 'NETWORK_FAILURE') } },
+    )
+    await assert.rejects(() => provider.search('consulta', 6), SearchUnavailableError)
+    const attempts = provider.takeAttempts()
+    assert.equal(attempts.length, 2)
+    assert.equal(attempts[1]?.provider, 'brave')
+    assert.equal(attempts[1]?.success, false)
+  })
+
+  it('expõe no trace a origem do resultado Brave sem conceder confiança extra', async () => {
+    const claimText = 'Brasília foi inaugurada em 1960.'
+    const trace = pipelineTrace()
+    const provider = new ControlledFallbackSearchProvider(
+      { async search() { throw new SearchUnavailableError('desafio', 'ANTI_BOT_CHALLENGE') } },
+      { async search() { return [{ ...result, provider: 'brave' as const }] } },
+    )
+    const output = await verify(claimText, {
+      ai: { async extractClaims() { return [{ text: claimText }] }, async extractEvidence() { return [] } },
+      search: provider,
+      fetcher: async (url) => ({ finalUrl: url, contentType: 'text/html', body: `<article>${'sem evidência '.repeat(50)}</article>`, truncated: false }),
+      trace,
+    })
+    assert.equal(output.classification, 'sem-evidencias')
+    assert.ok(trace.searchAttempts.some((attempt) => attempt.provider === 'brave' && attempt.success))
+    assert.ok(trace.searchAttempts.every((attempt) => !JSON.stringify(attempt).includes('BRAVE_API_KEY')))
   })
 })

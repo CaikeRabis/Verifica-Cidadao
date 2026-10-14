@@ -13,7 +13,7 @@ export type SourceTier = 'oficial' | 'jornalismo' | 'outro'
 export type Stance = 'supports' | 'contradicts' | 'insufficient' | 'unclear'
 export type StanceSource = 'ai' | 'deterministic'
 export type ClaimRole = 'primary' | 'secondary'
-export type SearchProviderName = 'brave' | 'duckduckgo' | 'wikipedia-fallback'
+export type SearchProviderName = 'brave' | 'duckduckgo'
 
 export interface SearchResult {
   title: string
