@@ -321,6 +321,7 @@ export async function verify(input: string, deps: VerificationDeps, options: Ver
         try {
           const res = await deps.search.search(`${kw} dados oficiais`, 6)
           for (const item of res) {
+            if (options.analyzedSource && sameUrl(item.url, options.analyzedSource.finalUrl)) continue
             if (!readUrls.has(item.url) && !retryMerged.some((m) => m.url === item.url)) {
               retryMerged.push(item)
             }
