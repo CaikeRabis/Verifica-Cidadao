@@ -18,6 +18,25 @@ export interface ScoredBlock {
   matchedTerms: string[]
 }
 
+export interface ContentWindow {
+  windowId: string
+  startOffset: number
+  endOffset: number
+  score: number
+  matchedTerms: string[]
+  structuredMatches: string[]
+  text: string
+}
+
+/** Janela efetivamente enviada à IA, com metadados diagnósticos. */
+export function selectRelevantWindows(sourceId: string, fullText: string, claims: { id: string; text: string }[], maxTotalChars = 6000): ContentWindow[] {
+  const text = selectRelevantExcerpts(fullText, claims, maxTotalChars)
+  const startOffset = Math.max(0, fullText.indexOf(text))
+  const terms = claims.flatMap((claim) => extractKeywords(claim.text)).filter((term, index, all) => all.indexOf(term) === index && norm(text).includes(norm(term)))
+  const structuredMatches = claims.flatMap((claim) => extractNumbers(claim.text)).filter((value, index, all) => all.indexOf(value) === index && text.includes(value))
+  return [{ windowId: `${sourceId}-w1`, startOffset, endOffset: startOffset + text.length, score: terms.length * 2 + structuredMatches.length * 4, matchedTerms: terms, structuredMatches, text }]
+}
+
 /**
  * Extrai números e anos explícitos de uma afirmação (ex: "1960", "21", "1.412", "1412", "81", "11", "26", "1988", "2022", "4").
  */

@@ -53,10 +53,11 @@ export interface ValidationResult {
 export type EvidenceRejectionReason =
   | 'INVALID_STRUCTURE' | 'CLAIM_MISMATCH' | 'INVALID_SOURCE' | 'SOURCE_NOT_READ'
   | 'QUOTE_NOT_FOUND' | 'LOW_LEXICAL_RELEVANCE' | 'ENTITY_MISMATCH'
+  | 'QUOTE_NOT_IN_WINDOW' | 'QUOTE_NOT_IN_SOURCE' | 'INVALID_WINDOW_ID'
   | 'HISTORICAL_CONTEXT_MISMATCH' | 'DUPLICATE' | 'OTHER'
 
 export interface EvidenceValidationObserver {
-  candidate: (item: { claimId: string; sourceId: string; quote: string; context: string; stanceFromAI: RawEvidence['stance']; structuredEntities: ReturnType<typeof extractFactualEntities> }) => void
+  candidate: (item: { claimId: string; sourceId: string; windowId?: string; quote: string; context: string; stanceFromAI: RawEvidence['stance']; structuredEntities: ReturnType<typeof extractFactualEntities> }) => void
   rejected: (item: { claimId: string; sourceId: string; quote: string; reason: EvidenceRejectionReason; relevanceChecks?: Record<string, boolean | number> }) => void
   accepted: (item: ValidEvidence & { stanceFromAI: RawEvidence['stance']; relevanceChecks: Record<string, boolean | number> }) => void
 }
@@ -102,7 +103,7 @@ export function validateEvidences(raw: RawEvidence[], claims: Claim[], sources: 
     if (!claimIds.has(e.claimId)) { discarded++; observer?.rejected({ ...e, reason: 'CLAIM_MISMATCH' }); continue }
     if (!source) { discarded++; observer?.rejected({ ...e, reason: 'INVALID_SOURCE' }); continue }
     if (source.readStatus !== 'read' || !source.text) { discarded++; observer?.rejected({ ...e, reason: 'SOURCE_NOT_READ' }); continue }
-    if (!quoteExistsIn(e.quote, source.text)) { discarded++; observer?.rejected({ ...e, reason: 'QUOTE_NOT_FOUND' }); continue }
+    if (!quoteExistsIn(e.quote, source.text)) { discarded++; observer?.rejected({ ...e, reason: 'QUOTE_NOT_IN_SOURCE' }); continue }
     const claim = claims.find((c) => c.id === e.claimId)!
     const factual = compareFactualClaim(claim.text, e.quote)
     const stance = factual?.stance ?? e.stance

@@ -1,6 +1,6 @@
 import type { Config } from '../config'
 import { AiInvalidResponseError, AiUnavailableError } from '../errors'
-import { selectRelevantExcerpts } from '../lib/contentWindowing'
+import { selectRelevantWindows } from '../lib/contentWindowing'
 import type { ClaimRole, RawEvidence, SourceDoc, Stance } from '../types'
 
 export interface ClaimDraft {
@@ -114,7 +114,7 @@ export class OpenAiCompatibleService implements AiService {
     const sourceBlock = sources
       .map(
         (s) =>
-          `SOURCE ${s.id}\nTítulo: ${s.title}\nURL: ${s.url}\nPublicada em: ${s.publishedAt ?? 'não informada'}\n[WINDOW ${s.id}-w1]\n<<<\n${selectRelevantExcerpts(s.text ?? '', claims, 6000)}\n>>>`,
+          `SOURCE ${s.id}\nTítulo: ${s.title}\nURL: ${s.url}\nPublicada em: ${s.publishedAt ?? 'não informada'}\n${selectRelevantWindows(s.id, s.text ?? '', claims, 6000).map((w) => `[WINDOW ${w.windowId}]\n<<<\n${w.text}\n>>>`).join('\n')}`,
       )
       .join('\n\n')
     const user = `AFIRMAÇÕES:\n${JSON.stringify(claims)}\n\nFONTES LIDAS:\n${sourceBlock}`

@@ -37,7 +37,7 @@ async function main() {
     const started = performance.now()
     const trace: PipelineTrace = {
       timingsMs: {}, queries: {}, searchResults: {}, searchCalls: [], selectedSources: [], fetches: [], aiCalls: [],
-      evidenceCandidates: [], rejectedEvidences: [], acceptedEvidenceTrace: [], acceptedEvidences: 0, discardedEvidences: 0,
+      evidenceCandidates: [], rejectedEvidences: [], acceptedEvidenceTrace: [], windows: [], acceptedEvidences: 0, discardedEvidences: 0,
     }
     try {
       const result = await verify(input, { ...deps, trace })

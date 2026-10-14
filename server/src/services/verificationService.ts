@@ -25,6 +25,7 @@ import { defaultFetcher, readSources, type PageFetcher } from './sourceReader'
 import { PIPELINE_VERSION } from '../version'
 import { composeNarrative } from '../lib/resultNarrative'
 import { performance } from 'node:perf_hooks'
+import { selectRelevantWindows } from '../lib/contentWindowing'
 
 export interface PipelineTrace {
   timingsMs: Record<string, number>
@@ -34,9 +35,10 @@ export interface PipelineTrace {
   selectedSources: { title: string; url: string; domain: string; tier: SourceTier }[]
   fetches: { sourceId: string; url: string; domain: string; durationMs: number; readStatus: string; bytes?: number; failureReason?: string }[]
   aiCalls: { purpose: 'claim-extraction' | 'evidence-extraction' | 'targeted-evidence-extraction' | 'second-round-evidence-extraction'; durationMs: number }[]
-  evidenceCandidates: { evidenceCandidateId: string; claimId: string; sourceId: string; quote: string; context: string; stanceFromAI: Stance; structuredEntities: unknown[] }[]
+  evidenceCandidates: { evidenceCandidateId: string; claimId: string; sourceId: string; windowId?: string; quote: string; context: string; stanceFromAI: Stance; structuredEntities: unknown[] }[]
   rejectedEvidences: { claimId: string; sourceId: string; quote: string; reason: EvidenceRejectionReason; relevanceChecks?: Record<string, boolean | number> }[]
   acceptedEvidenceTrace: { claimId: string; sourceId: string; quote: string; stanceFromAI: Stance; stanceFinal: Stance; stanceSource?: string; relevanceChecks: Record<string, boolean | number> }[]
+  windows: { sourceId: string; windowId: string; startOffset: number; endOffset: number; score: number; matchedTerms: string[]; structuredMatches: string[]; text: string }[]
   acceptedEvidences: number
   discardedEvidences: number
 }
@@ -219,6 +221,7 @@ export async function verify(input: string, deps: VerificationDeps): Promise<Ver
   const sources = await readSources(selected, fetcher, () => now, 0, (event) => deps.trace?.fetches.push(event))
   deps.trace && (deps.trace.timingsMs.readSources = Math.round(performance.now() - readingStarted))
   const read = sources.filter((s) => s.readStatus === 'read')
+  if (deps.trace) deps.trace.windows.push(...read.flatMap((source) => selectRelevantWindows(source.id, source.text ?? '', claims, 6000).map((window) => ({ sourceId: source.id, ...window }))))
   const unread = sources.length - read.length
   if (unread > 0) {
     limitations.push(

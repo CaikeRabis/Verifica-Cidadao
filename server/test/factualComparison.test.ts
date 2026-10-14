@@ -75,6 +75,6 @@ describe('Comparação factual determinística v0.2.1', () => {
     }], {
       candidate() {}, accepted() {}, rejected: (item) => rejected.push(item.reason),
     })
-    assert.deepEqual(rejected, ['QUOTE_NOT_FOUND'])
+    assert.deepEqual(rejected, ['QUOTE_NOT_IN_SOURCE'])
   })
 })
