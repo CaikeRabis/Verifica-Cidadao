@@ -63,20 +63,32 @@ export interface EvidenceValidationObserver {
 }
 
 const HISTORICAL_CONTEXT = /\b(inicial|hist[oó]ric[oa]|antig[oa]|[àa]\s+época|originalmente)\b/i
+const ALIASES: [RegExp, string][] = [
+  [/\bsupremo tribunal federal\b/gi, 'stf'], [/\bsenado federal\b/gi, 'senado'],
+  [/\bc[aâ]mara dos deputados\b/gi, 'camara'], [/\bsistema [úu]nico de sa[úu]de\b/gi, 'sus'],
+  [/\bdistrito federal\b/gi, 'df'], [/\b(?:possui|tem)\b/gi, 'composicao'], [/\b[ée] composto por\b/gi, 'composicao'],
+]
+const canonical = (text: string) => ALIASES.reduce((value, [pattern, replacement]) => value.replace(pattern, replacement), text)
 
 /** Relevância mínima: a fonte pode ser confiável, mas ainda não responder à claim. */
 function relevance(claim: Claim, quote: string, stance: RawEvidence['stance'], factual: ReturnType<typeof compareFactualClaim>) {
-  const claimWords = extractKeywords(claim.text).filter((word) => word.length >= 3 && !/^\d/.test(word))
-  const quoteWords = new Set(extractKeywords(quote))
+  const normalizedClaim = canonical(claim.text)
+  const normalizedQuote = canonical(quote)
+  const claimWords = extractKeywords(normalizedClaim).filter((word) => word.length >= 3 && !/^\d/.test(word))
+  const quoteWords = new Set(extractKeywords(normalizedQuote))
   const overlap = claimWords.filter((word) => quoteWords.has(word)).length
   const numericRequired = extractFactualEntities(claim.text).length > 0
+  const componentFactual = compareFactualClaim(normalizedClaim, normalizedQuote)
+  const entityMatch = claimWords.some((word) => ['stf', 'senado', 'camara', 'sus', 'df'].includes(word) && quoteWords.has(word))
+  const objectMatch = claimWords.filter((word) => !['stf', 'senado', 'camara', 'sus', 'df'].includes(word)).some((word) => quoteWords.has(word))
+  const valueMatch = !!(factual ?? componentFactual)
   const historicalConflict = stance === 'supports' && HISTORICAL_CONTEXT.test(quote) && !HISTORICAL_CONTEXT.test(claim.text)
-  const checks = { lexicalOverlap: overlap >= 2, lexicalOverlapCount: overlap, entityMatch: !!factual, numericRequired, historicalConflict }
-  if (overlap < 2) return { ok: false, reason: 'LOW_LEXICAL_RELEVANCE' as const, checks }
+  const checks = { lexicalOverlap: overlap >= 2, lexicalOverlapCount: overlap, entityMatch, aliasMatch: entityMatch, objectMatch, valueMatch, temporalMatch: !historicalConflict, lexicalMatch: overlap >= 2, numericRequired, historicalConflict }
+  if (overlap < 2 && !(entityMatch && objectMatch && valueMatch)) return { ok: false, reason: 'LOW_LEXICAL_RELEVANCE' as const, checks }
 
   // Claims quantitativas exigem comparação objetiva; texto com número em outro
   // contexto (ou número por extenso) não pode virar suporte por decisão da IA.
-  if (numericRequired && !factual) return { ok: false, reason: 'ENTITY_MISMATCH' as const, checks }
+  if (numericRequired && !(factual ?? componentFactual)) return { ok: false, reason: 'ENTITY_MISMATCH' as const, checks }
   // Uma composição histórica não comprova a composição atual quando a claim não
   // traz esse recorte temporal.
   if (historicalConflict) return { ok: false, reason: 'HISTORICAL_CONTEXT_MISMATCH' as const, checks }
@@ -105,7 +117,7 @@ export function validateEvidences(raw: RawEvidence[], claims: Claim[], sources: 
     if (source.readStatus !== 'read' || !source.text) { discarded++; observer?.rejected({ ...e, reason: 'SOURCE_NOT_READ' }); continue }
     if (!quoteExistsIn(e.quote, source.text)) { discarded++; observer?.rejected({ ...e, reason: 'QUOTE_NOT_IN_SOURCE' }); continue }
     const claim = claims.find((c) => c.id === e.claimId)!
-    const factual = compareFactualClaim(claim.text, e.quote)
+    const factual = compareFactualClaim(canonical(claim.text), canonical(e.quote))
     const stance = factual?.stance ?? e.stance
     const relevanceResult = relevance(claim, e.quote, stance, factual)
     if (!relevanceResult.ok) {
