@@ -9,8 +9,8 @@ export interface ClaimDraft {
 }
 
 export interface AiService {
-  extractClaims(input: string): Promise<ClaimDraft[]>
-  extractEvidence(claims: { id: string; text: string }[], sources: SourceDoc[]): Promise<RawEvidence[]>
+  extractClaims(input: string, options?: { retry?: boolean }): Promise<ClaimDraft[]>
+  extractEvidence(claims: { id: string; text: string }[], sources: SourceDoc[], options?: { retry?: boolean }): Promise<RawEvidence[]>
 }
 
 const RULES = `Regras invioláveis:
@@ -96,8 +96,11 @@ export class OpenAiCompatibleService implements AiService {
     return parseJson(content)
   }
 
-  async extractClaims(input: string): Promise<ClaimDraft[]> {
-    const out = (await this.chat(CLAIMS_SYSTEM, `TEXTO DO CIDADÃO:\n<<<\n${input}\n>>>`)) as { claims?: unknown }
+  async extractClaims(input: string, options: { retry?: boolean } = {}): Promise<ClaimDraft[]> {
+    const retryInstruction = options.retry
+      ? '\nA primeira tentativa não encontrou uma claim válida. Extraia a proposição factual alegada, mesmo se ela for falsa; só devolva lista vazia se realmente não houver fato verificável.'
+      : ''
+    const out = (await this.chat(CLAIMS_SYSTEM, `TEXTO DO CIDADÃO:\n<<<\n${input}\n>>>${retryInstruction}`)) as { claims?: unknown }
     if (!Array.isArray(out.claims)) throw new AiInvalidResponseError('claims ausentes')
     return out.claims
       .map((c) => {
@@ -110,14 +113,17 @@ export class OpenAiCompatibleService implements AiService {
       .slice(0, 3)
   }
 
-  async extractEvidence(claims: { id: string; text: string }[], sources: SourceDoc[]): Promise<RawEvidence[]> {
+  async extractEvidence(claims: { id: string; text: string }[], sources: SourceDoc[], options: { retry?: boolean } = {}): Promise<RawEvidence[]> {
     const sourceBlock = sources
       .map(
         (s) =>
           `SOURCE ${s.id}\nTítulo: ${s.title}\nURL: ${s.url}\nPublicada em: ${s.publishedAt ?? 'não informada'}\n${selectRelevantWindows(s.id, s.text ?? '', claims, 6000).map((w) => `[WINDOW ${w.windowId}]\n<<<\n${w.text}\n>>>`).join('\n')}`,
       )
       .join('\n\n')
-    const user = `AFIRMAÇÕES:\n${JSON.stringify(claims)}\n\nFONTES LIDAS:\n${sourceBlock}`
+    const retryInstruction = options.retry
+      ? `\nA primeira extração não produziu evidência válida para esta afirmação. Analise novamente SOMENTE as janelas fornecidas. Se houver evidência pertinente, copie literalmente o menor trecho suficiente, preservando palavras, números, datas e pontuação, e retorne sourceId e windowId corretos. Não fabrique nem parafraseie; se não houver evidência suficiente, devolva lista vazia.\n`
+      : ''
+    const user = `AFIRMAÇÕES:\n${JSON.stringify(claims)}\n${retryInstruction}\nFONTES LIDAS:\n${sourceBlock}`
     const out = (await this.chat(EVIDENCE_SYSTEM, user)) as { evidences?: unknown }
     if (!Array.isArray(out.evidences)) throw new AiInvalidResponseError('evidences ausentes')
     const list: RawEvidence[] = []

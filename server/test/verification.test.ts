@@ -8,11 +8,19 @@ import { readSources } from '../src/services/sourceReader'
 import { generateSearchQueries } from '../src/lib/queryGeneration'
 import { rankForClaim, selectSources } from '../src/lib/sourceRanking'
 import { resolveSafeRedirect, validatePublicUrl } from '../src/lib/safeFetch'
-import { normalizeClaims, verify } from '../src/services/verificationService'
+import { normalizeClaims, verify, type PipelineTrace } from '../src/services/verificationService'
 import type { AiService } from '../src/services/aiService'
 import type { SearchProvider } from '../src/services/searchService'
 import type { Candidate } from '../src/lib/sourceRanking'
 import type { Claim, RawEvidence, SourceDoc, ValidEvidence } from '../src/types'
+
+function pipelineTrace(): PipelineTrace {
+  return {
+    timingsMs: {}, queries: {}, searchResults: {}, searchCalls: [], selectedSources: [], fetches: [], aiCalls: [],
+    evidenceCandidates: [], rejectedEvidences: [], acceptedEvidenceTrace: [], windows: [], acceptedEvidences: 0, discardedEvidences: 0,
+    retries: { extraAiCalls: 0, evidence: [] },
+  }
+}
 
 describe('1. Validação de input', () => {
   it('rejeita input não string ou ausente', () => {
@@ -424,5 +432,117 @@ describe('7. Infraestrutura de alto valor', () => {
     assert.equal(result.classification, 'confirmada')
     assert.ok(result.limitations.some((item) => item.includes('segunda rodada')))
     assert.ok(calls.some((query) => query.includes('dados oficiais')))
+  })
+})
+
+describe('8. Retry controlado de extrações estruturadas', () => {
+  const input = 'Brasília foi inaugurada em 1960.'
+  const source = { title: 'Registro oficial', url: 'https://dados.gov.br/registro', domain: 'dados.gov.br', snippet: 'Brasília foi inaugurada em 1960.' }
+  const fetcher = async (url: string) => ({
+    finalUrl: url, contentType: 'text/html', body: `<article>Brasília foi inaugurada em 1960. ${'registro '.repeat(40)}</article>`, truncated: false,
+  })
+  const evidence = (): RawEvidence => ({ claimId: 'c1', sourceId: 's1', quote: 'Brasília foi inaugurada em 1960.', context: '', stance: 'supports' })
+
+  it('não repete extração de claims nem de evidência quando a primeira tentativa é válida', async () => {
+    let claimCalls = 0
+    let evidenceCalls = 0
+    const trace = pipelineTrace()
+    const result = await verify(input, {
+      ai: {
+        async extractClaims() { claimCalls++; return [{ text: input }] },
+        async extractEvidence() { evidenceCalls++; return [evidence()] },
+      },
+      search: { async search() { return [source] } }, fetcher, trace,
+    })
+    assert.equal(result.classification, 'confirmada')
+    assert.equal(claimCalls, 1)
+    assert.equal(evidenceCalls, 1)
+    assert.equal(trace.retries.extraAiCalls, 0)
+  })
+
+  it('repete claims uma única vez quando a primeira resposta é vazia e continua com a claim válida', async () => {
+    let claimCalls = 0
+    const trace = pipelineTrace()
+    const result = await verify(input, {
+      ai: {
+        async extractClaims() { claimCalls++; return claimCalls === 1 ? [] : [{ text: input }] },
+        async extractEvidence() { return [evidence()] },
+      },
+      search: { async search() { return [source] } }, fetcher, trace,
+    })
+    assert.equal(result.classification, 'confirmada')
+    assert.equal(claimCalls, 2)
+    assert.equal(trace.retries.claims?.retryReason, 'ZERO_VALID_CLAIMS')
+    assert.equal(trace.aiCalls.filter((call) => call.purpose === 'claim-extraction').length, 2)
+  })
+
+  it('para após a segunda extração de claims vazia, sem fazer busca', async () => {
+    let claimCalls = 0
+    let searchCalls = 0
+    const trace = pipelineTrace()
+    const result = await verify(input, {
+      ai: {
+        async extractClaims() { claimCalls++; return [] },
+        async extractEvidence() { return [] },
+      },
+      search: { async search() { searchCalls++; return [source] } }, fetcher, trace,
+    })
+    assert.equal(result.classification, 'analise-humana')
+    assert.equal(claimCalls, 2)
+    assert.equal(searchCalls, 0)
+    assert.equal(trace.retries.extraAiCalls, 1)
+  })
+
+  it('repete evidência uma vez para primary descoberta, reutilizando as fontes e sem nova busca ou fetch', async () => {
+    let evidenceCalls = 0
+    let searchCalls = 0
+    let fetchCalls = 0
+    const trace = pipelineTrace()
+    const result = await verify(input, {
+      ai: {
+        async extractClaims() { return [{ text: input }] },
+        async extractEvidence(_claims, _sources, options) { evidenceCalls++; return options?.retry ? [evidence()] : [] },
+      },
+      search: { async search() { searchCalls++; return [source] } },
+      fetcher: async (url) => { fetchCalls++; return fetcher(url) },
+      trace,
+    })
+    assert.equal(result.classification, 'confirmada')
+    assert.equal(evidenceCalls, 2)
+    assert.equal(searchCalls, 3)
+    assert.equal(fetchCalls, 1)
+    assert.equal(trace.retries.evidence[0]?.retryReason, 'PRIMARY_WITHOUT_VALID_EVIDENCE')
+    assert.equal(trace.retries.evidence[0]?.acceptedAttempt2, 1)
+    assert.deepEqual(trace.retries.evidence[0]?.reusedSources, ['s1'])
+  })
+
+  it('não repete evidência sem fonte lida e mantém retry inválido sujeito à validação normal', async () => {
+    let noReadEvidenceCalls = 0
+    const noReadTrace = pipelineTrace()
+    await verify(input, {
+      ai: {
+        async extractClaims() { return [{ text: input }] },
+        async extractEvidence() { noReadEvidenceCalls++; return [] },
+      },
+      search: { async search() { return [source] } },
+      fetcher: async (url) => ({ finalUrl: url, contentType: 'text/html', body: '', truncated: false }),
+      trace: noReadTrace,
+    })
+    assert.equal(noReadEvidenceCalls, 0)
+    assert.equal(noReadTrace.retries.evidence.length, 0)
+
+    let invalidCalls = 0
+    const invalidTrace = pipelineTrace()
+    const invalid = await verify(input, {
+      ai: {
+        async extractClaims() { return [{ text: input }] },
+        async extractEvidence(_claims, _sources, options) { invalidCalls++; return options?.retry ? [{ ...evidence(), quote: 'quote inexistente' }] : [] },
+      },
+      search: { async search() { return [source] } }, fetcher, trace: invalidTrace,
+    })
+    assert.equal(invalid.classification, 'sem-evidencias')
+    assert.equal(invalidCalls, 2)
+    assert.equal(invalidTrace.retries.evidence[0]?.acceptedAttempt2, 0)
+    assert.ok(invalidTrace.rejectedEvidences.some((item) => item.reason === 'QUOTE_NOT_IN_SOURCE'))
   })
 })

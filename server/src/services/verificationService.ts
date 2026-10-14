@@ -34,13 +34,18 @@ export interface PipelineTrace {
   searchCalls: { claimId: string; query: string; durationMs: number; resultCount: number; providers: string[] }[]
   selectedSources: { title: string; url: string; domain: string; tier: SourceTier }[]
   fetches: { sourceId: string; url: string; domain: string; durationMs: number; readStatus: string; bytes?: number; failureReason?: string }[]
-  aiCalls: { purpose: 'claim-extraction' | 'evidence-extraction' | 'targeted-evidence-extraction' | 'second-round-evidence-extraction'; durationMs: number }[]
+  aiCalls: { purpose: 'claim-extraction' | 'evidence-extraction' | 'targeted-evidence-extraction' | 'second-round-evidence-extraction'; durationMs: number; aiAttempt: 1 | 2; retryTriggered: boolean; retryReason?: 'ZERO_VALID_CLAIMS' | 'PRIMARY_WITHOUT_VALID_EVIDENCE' }[]
   evidenceCandidates: { evidenceCandidateId: string; claimId: string; sourceId: string; windowId?: string; quote: string; context: string; stanceFromAI: Stance; structuredEntities: unknown[] }[]
   rejectedEvidences: { claimId: string; sourceId: string; quote: string; reason: EvidenceRejectionReason; relevanceChecks?: Record<string, boolean | number> }[]
   acceptedEvidenceTrace: { claimId: string; sourceId: string; quote: string; stanceFromAI: Stance; stanceFinal: Stance; stanceSource?: string; relevanceChecks: Record<string, boolean | number> }[]
   windows: { sourceId: string; windowId: string; startOffset: number; endOffset: number; score: number; matchedTerms: string[]; structuredMatches: string[]; text: string }[]
   acceptedEvidences: number
   discardedEvidences: number
+  retries: {
+    extraAiCalls: number
+    claims?: { aiAttempt: 1 | 2; retryTriggered: boolean; retryReason?: 'ZERO_VALID_CLAIMS' }
+    evidence: { claimId: string; aiAttempt: 1 | 2; retryTriggered: boolean; retryReason?: 'PRIMARY_WITHOUT_VALID_EVIDENCE'; reusedSources: string[]; reusedWindowIds: string[]; candidatesAttempt1: number; candidatesAttempt2?: number; acceptedAttempt1: number; acceptedAttempt2?: number }[]
+  }
 }
 
 function evidenceObserver(trace?: PipelineTrace) {
@@ -166,10 +171,22 @@ export async function verify(input: string, deps: VerificationDeps): Promise<Ver
 
   // 1. Claims (falha da IA aqui interrompe: não há o que verificar)
   const claimsStarted = performance.now()
-  const drafts = await deps.ai.extractClaims(input)
+  let drafts = await deps.ai.extractClaims(input)
   deps.trace && (deps.trace.timingsMs.claimExtraction = Math.round(performance.now() - claimsStarted))
-  deps.trace?.aiCalls.push({ purpose: 'claim-extraction', durationMs: deps.trace.timingsMs.claimExtraction })
-  const claims = normalizeClaims(drafts)
+  deps.trace?.aiCalls.push({ purpose: 'claim-extraction', durationMs: deps.trace.timingsMs.claimExtraction, aiAttempt: 1, retryTriggered: false })
+  let claims = normalizeClaims(drafts)
+  if (claims.length === 0) {
+    const retryStarted = performance.now()
+    drafts = await deps.ai.extractClaims(input, { retry: true })
+    const retryDuration = Math.round(performance.now() - retryStarted)
+    claims = normalizeClaims(drafts)
+    if (deps.trace) {
+      deps.trace.aiCalls.push({ purpose: 'claim-extraction', durationMs: retryDuration, aiAttempt: 2, retryTriggered: true, retryReason: 'ZERO_VALID_CLAIMS' })
+      deps.trace.retries.extraAiCalls++
+      deps.trace.retries.claims = { aiAttempt: 2, retryTriggered: true, retryReason: 'ZERO_VALID_CLAIMS' }
+      deps.trace.timingsMs.claimExtraction += retryDuration
+    }
+  }
   if (claims.length === 0) {
     const out = classify({ claims, evidences: [] })
     return buildResult({ ...base, claims, sources: [], ...out, limitations: ['Não foi identificada nenhuma afirmação factual verificável no texto.'] })
@@ -243,22 +260,44 @@ export async function verify(input: string, deps: VerificationDeps): Promise<Ver
   try {
     const extractionStarted = performance.now()
     const raw = await deps.ai.extractEvidence(claims, read)
-    deps.trace?.aiCalls.push({ purpose: 'evidence-extraction', durationMs: Math.round(performance.now() - extractionStarted) })
+    deps.trace?.aiCalls.push({ purpose: 'evidence-extraction', durationMs: Math.round(performance.now() - extractionStarted), aiAttempt: 1, retryTriggered: false })
     const v = validateEvidences(raw, claims, sources, evidenceObserver(deps.trace))
     validEv = v.valid
     discarded = v.discarded
 
-    // Cobertura dirigida: nenhuma claim é resolvida por evidência de outra.
-    // Para claims ainda sem evidência válida, pede-se uma extração focada nas
-    // páginas já lidas antes de ampliar a busca.
-    const uncovered = claims.filter((claim) => !validEv.some((evidence) => evidence.claimId === claim.id))
-    if (uncovered.length > 0) {
+    // Retry estritamente controlado: somente a primary sem cobertura e apenas
+    // com fontes/janelas já lidas. Não aciona busca, ranking ou fetch.
+    const retryablePrimary = claims.filter((claim) => {
+      if (claim.role !== 'primary' || validEv.some((evidence) => evidence.claimId === claim.id)) return false
+      return read.some((source) => selectRelevantWindows(source.id, source.text ?? '', [claim], 6000).some((window) => window.score > 0))
+    })
+    if (retryablePrimary.length > 0) {
+      const candidatesAttempt1 = new Map(retryablePrimary.map((claim) => [claim.id, raw.filter((item) => item.claimId === claim.id).length]))
+      const acceptedAttempt1 = new Map(retryablePrimary.map((claim) => [claim.id, validEv.filter((item) => item.claimId === claim.id).length]))
       const focusedStarted = performance.now()
-      const focusedRaw = await deps.ai.extractEvidence(uncovered, read)
-      deps.trace?.aiCalls.push({ purpose: 'targeted-evidence-extraction', durationMs: Math.round(performance.now() - focusedStarted) })
-      const focused = validateEvidences(focusedRaw, uncovered, sources, evidenceObserver(deps.trace))
+      const focusedRaw = await deps.ai.extractEvidence(retryablePrimary, read, { retry: true })
+      deps.trace?.aiCalls.push({ purpose: 'targeted-evidence-extraction', durationMs: Math.round(performance.now() - focusedStarted), aiAttempt: 2, retryTriggered: true, retryReason: 'PRIMARY_WITHOUT_VALID_EVIDENCE' })
+      const focused = validateEvidences(focusedRaw, retryablePrimary, sources, evidenceObserver(deps.trace))
       discarded += focused.discarded
       validEv = [...validEv, ...focused.valid].map((evidence, index) => ({ ...evidence, id: `e${index + 1}` }))
+      if (deps.trace) {
+        deps.trace.retries.extraAiCalls++
+        for (const claim of retryablePrimary) {
+          const windows = read.flatMap((source) => selectRelevantWindows(source.id, source.text ?? '', [claim], 6000)).filter((window) => window.score > 0)
+          deps.trace.retries.evidence.push({
+            claimId: claim.id,
+            aiAttempt: 2,
+            retryTriggered: true,
+            retryReason: 'PRIMARY_WITHOUT_VALID_EVIDENCE',
+            reusedSources: [...new Set(windows.map((window) => window.windowId.replace(/-w\d+$/, '')))],
+            reusedWindowIds: windows.map((window) => window.windowId),
+            candidatesAttempt1: candidatesAttempt1.get(claim.id) ?? 0,
+            candidatesAttempt2: focusedRaw.filter((item) => item.claimId === claim.id).length,
+            acceptedAttempt1: acceptedAttempt1.get(claim.id) ?? 0,
+            acceptedAttempt2: focused.valid.filter((item) => item.claimId === claim.id).length,
+          })
+        }
+      }
     }
 
     // 5b. SEGUNDA RODADA CONTROLADA: se encontrou fontes mas nenhuma evidência válida
@@ -285,7 +324,7 @@ export async function verify(input: string, deps: VerificationDeps): Promise<Ver
           if (round2Read.length > 0) {
             const round2Started = performance.now()
             const raw2 = await deps.ai.extractEvidence(claims, round2Read)
-            deps.trace?.aiCalls.push({ purpose: 'second-round-evidence-extraction', durationMs: Math.round(performance.now() - round2Started) })
+            deps.trace?.aiCalls.push({ purpose: 'second-round-evidence-extraction', durationMs: Math.round(performance.now() - round2Started), aiAttempt: 1, retryTriggered: false })
             const v2 = validateEvidences(raw2, claims, [...sources, ...round2Sources], evidenceObserver(deps.trace))
             if (v2.valid.length > 0) {
               validEv = v2.valid
