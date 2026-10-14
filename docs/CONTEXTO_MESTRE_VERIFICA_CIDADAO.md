@@ -910,6 +910,7 @@ Se você é a IA que está recebendo este arquivo, considere o seguinte como ori
 
 ## Nota de validação da v0.2
 
+- A v0.2 foi concluída no pipeline `0.2.2`.
 - O *golden set* é a regressão lógica controlada do pipeline; a bateria real mede comportamento externo.
 - A bateria real passou a ter 11 casos. O antigo cenário de datas de obra foi removido porque não identificava obra, órgão, documentos ou fontes: media ausência de contexto, não conflito documental.
 - O conflito documental permanece coberto por fixture sintética controlada, com Documento A e Documento B identificados e datas divergentes.
