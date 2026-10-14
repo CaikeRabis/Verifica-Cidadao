@@ -22,7 +22,8 @@ const cases: { category: string; expectedClassification: Classification; input: 
   { category: 'insufficient', expectedClassification: 'sem-evidencias', input: 'Um programa municipal de leitura aumentou em 40% a frequência escolar em 2023.' },
   { category: 'insufficient', expectedClassification: 'sem-evidencias', input: 'Uma cidade brasileira recebeu o maior investimento cultural da história em 2024.' },
   { category: 'human', expectedClassification: 'analise-humana', input: 'Há fraude comprovada em um contrato público sem identificação do órgão ou documento.' },
-  { category: 'human', expectedClassification: 'analise-humana', input: 'Duas fontes oficiais apresentam datas diferentes para a conclusão de uma obra pública.' },
+  // O antigo caso de datas de obra foi removido: sem obra, órgão ou documentos
+  // identificáveis, ele media ausência de contexto, não conflito documental.
 ]
 
 async function main() {

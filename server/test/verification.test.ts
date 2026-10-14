@@ -124,6 +124,34 @@ describe('3. Fallback para análise humana', () => {
     assert.equal(verdict.status, 'analise-humana')
   })
 
+  it('preserva conflito documental identificado em fixture controlada', () => {
+    const claim: Claim = {
+      id: 'obra-ponte-central',
+      text: 'A obra Ponte Central foi concluída em 10/03/2024.',
+      role: 'primary',
+    }
+    const documentoA: ValidEvidence = {
+      id: 'documento-a',
+      claimId: claim.id,
+      sourceId: 'relatorio-obras-2024',
+      quote: 'Documento A — Relatório de Obras 2024: conclusão da Ponte Central em 10/03/2024.',
+      context: 'Documento oficial A, emitido pela Secretaria de Obras.',
+      stance: 'supports',
+      tier: 'oficial',
+    }
+    const documentoB: ValidEvidence = {
+      id: 'documento-b',
+      claimId: claim.id,
+      sourceId: 'termo-recebimento-2024',
+      quote: 'Documento B — Termo de Recebimento: conclusão da Ponte Central em 15/04/2024.',
+      context: 'Documento oficial B, emitido pela Secretaria de Obras.',
+      stance: 'contradicts',
+      tier: 'oficial',
+    }
+
+    assert.equal(classifyClaim(claim, [documentoA, documentoB]).status, 'analise-humana')
+  })
+
   it('cai para analise-humana diante de suporte e contradição fortes, ainda que não oficiais', () => {
     const c: Claim = { id: 'c1', text: 'A obra foi concluída no prazo.', role: 'primary' }
     const evidence = (id: string, stance: 'supports' | 'contradicts'): ValidEvidence => ({

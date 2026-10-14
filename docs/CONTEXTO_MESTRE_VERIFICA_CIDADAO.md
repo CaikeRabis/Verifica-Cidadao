@@ -905,3 +905,13 @@ Se você é a IA que está recebendo este arquivo, considere o seguinte como ori
 ---
 
 **Fim do documento de contexto.**
+
+---
+
+## Nota de validação da v0.2
+
+- O *golden set* é a regressão lógica controlada do pipeline; a bateria real mede comportamento externo.
+- A bateria real passou a ter 11 casos. O antigo cenário de datas de obra foi removido porque não identificava obra, órgão, documentos ou fontes: media ausência de contexto, não conflito documental.
+- O conflito documental permanece coberto por fixture sintética controlada, com Documento A e Documento B identificados e datas divergentes.
+- DuckDuckGo é o provider principal atual. Brave Search está integrado e disponível, mas não é o padrão.
+- Busca e leitura externas continuam sujeitas a variação de disponibilidade e conteúdo das fontes.
