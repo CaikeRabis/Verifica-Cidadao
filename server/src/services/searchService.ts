@@ -25,7 +25,7 @@ export class BraveSearchProvider implements SearchProvider {
     const cacheKey = `brave:${query}:${limit}`
     if (searchCache.has(cacheKey)) return searchCache.get(cacheKey)!
 
-    const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${limit}&country=BR&search_lang=pt`
+    const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${limit}&country=BR&search_lang=pt-br`
     let res: Response
     try {
       res = await this.fetchImpl(url, {
