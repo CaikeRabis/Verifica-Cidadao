@@ -13,7 +13,7 @@ export function useVerification() {
   const [unavailableSourceName, setUnavailableSourceName] = useState('Portal da Transparência')
   const runId = useRef(0)
 
-  const verify = useCallback(async (query: string, forced?: Classification) => {
+  const verify = useCallback(async (query: string, forced?: Classification, inputType: 'text' | 'url' = 'text') => {
     const text = query.trim()
     if (!text) {
       setStatus('empty')
@@ -25,7 +25,7 @@ export function useVerification() {
     setStatus('loading')
     setResult(null)
     try {
-      const res = await verifyInformation(text, forced)
+      const res = await verifyInformation(text, forced, inputType)
       if (id !== runId.current) return
       setResult(res)
       setStatus('success')
@@ -50,4 +50,3 @@ export function useVerification() {
 
   return { status, result, lastQuery, unavailableSourceName, verify, reset }
 }
-

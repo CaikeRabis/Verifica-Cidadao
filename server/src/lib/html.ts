@@ -38,6 +38,7 @@ export interface ExtractedPage {
   title: string
   text: string
   publishedAt?: string
+  author?: string
 }
 
 /** Extração simples (sem DOM): título, texto principal e data de publicação quando óbvia. */
@@ -74,5 +75,6 @@ export function extractPage(html: string): ExtractedPage {
     .trim()
     .slice(0, MAX_TEXT)
 
-  return { title, text, publishedAt }
+  const author = stripTags(meta(html, 'author') ?? meta(html, 'article:author') ?? '').slice(0, 160) || undefined
+  return { title, text, publishedAt, author }
 }

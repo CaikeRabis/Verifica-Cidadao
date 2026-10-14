@@ -53,8 +53,8 @@ export default function Verifier() {
     }
   }, [query, mode])
 
-  const run = (text: string, forced?: Classification) => {
-    verify(text, forced)
+  const run = (text: string, forced?: Classification, inputType: 'text' | 'url' = 'text') => {
+    verify(text, forced, inputType)
     requestAnimationFrame(() =>
       areaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
     )
@@ -68,7 +68,13 @@ export default function Verifier() {
       if (!linkInput.trim()) {
         run('')
       } else {
-        run(`Link para verificação: ${linkInput.trim()}`)
+        try {
+          const parsed = new URL(linkInput.trim())
+          if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('protocolo')
+          run(parsed.toString(), undefined, 'url')
+        } catch {
+          run('')
+        }
       }
     }
   }
@@ -137,7 +143,6 @@ export default function Verifier() {
         >
           <Icon name="external" size={16} />
           <span>Link da web</span>
-          <span className="mode-pill">Demonstrativo</span>
         </button>
 
         <button
@@ -208,7 +213,7 @@ export default function Verifier() {
         </form>
       )}
 
-      {/* Formulário do modo Link (demonstrativo) */}
+      {/* Formulário do modo Link */}
       {mode === 'link' && (
         <form onSubmit={onSubmit} role="search" aria-label="Verificar link da web">
           <div className={`search ${isEmpty ? 'search--error' : ''}`}>
@@ -220,7 +225,7 @@ export default function Verifier() {
                 className="search__input"
                 value={linkInput}
                 onChange={(e) => setLinkInput(e.target.value)}
-                placeholder="Cole o endereço da notícia ou postagem (ex: https://portal.exemplo.com/noticia)"
+                placeholder="Cole o link da notícia, publicação ou página que deseja verificar"
                 aria-describedby={hintId}
                 disabled={loading}
               />
@@ -233,8 +238,7 @@ export default function Verifier() {
           <div className="mode-demo-notice">
             <Icon name="info" size={17} />
             <p>
-              <strong>Modo demonstrativo:</strong> A leitura automatizada de links web e redes sociais será integrada
-              na fase de conexão de dados públicos e serviços de extração.
+              A página é usada apenas para identificar o conteúdo analisado. A verificação é feita com fontes externas.
             </p>
           </div>
         </form>

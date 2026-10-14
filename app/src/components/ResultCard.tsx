@@ -42,6 +42,15 @@ export default function ResultCard({ result, onNew }: Props) {
       </header>
 
       <div className="result__body">
+        {result.analyzedSource && (
+          <section className="result__section" aria-label="Conteúdo analisado">
+            <h4>Conteúdo analisado</h4>
+            <p><strong>{result.analyzedSource.title ?? result.analyzedSource.domain}</strong></p>
+            <p style={{ fontSize: '0.9rem' }}>{result.analyzedSource.domain}{result.analyzedSource.publishedDate ? ` · ${result.analyzedSource.publishedDate}` : ''}</p>
+            <a href={result.analyzedSource.finalUrl} target="_blank" rel="noopener noreferrer">Abrir conteúdo analisado</a>
+            <p style={{ fontSize: '0.88rem', marginTop: 8 }}>Esta página foi analisada para identificar afirmações; ela não é usada como evidência confirmatória.</p>
+          </section>
+        )}
         {/* 1. Afirmação analisada */}
         <section className="result__section">
           <h4>Afirmação analisada</h4>

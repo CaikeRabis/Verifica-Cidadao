@@ -72,6 +72,7 @@ async function mockVerification(
 export async function verifyInformation(
   query: string,
   forced?: Classification,
+  inputType: 'text' | 'url' = 'text',
 ): Promise<VerificationResult> {
   const demo = forced ?? detectDemoState(query)
   const useMock = import.meta.env.VITE_USE_MOCK_VERIFICATION === 'true'
@@ -87,7 +88,7 @@ export async function verifyInformation(
     response = await fetch(`${apiBase}/api/verify`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ input: query }),
+      body: JSON.stringify({ inputType, input: query }),
     })
   } catch {
     throw new VerificationError(

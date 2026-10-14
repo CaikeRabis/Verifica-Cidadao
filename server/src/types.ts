@@ -99,6 +99,15 @@ export interface ApiEvidence {
   stance: Stance
 }
 
+/** Página enviada pelo cidadão: é conteúdo analisado, nunca evidência de si mesma. */
+export interface AnalyzedSource {
+  url: string
+  finalUrl: string
+  domain: string
+  title?: string
+  publishedDate?: string
+}
+
 export interface VerificationResult {
   id: string
   requestId: string
@@ -113,5 +122,6 @@ export interface VerificationResult {
   limitations: string[]
   evidences: ApiEvidence[]
   sources: ApiSource[]
+  analyzedSource?: AnalyzedSource
   analyzedAt: string
 }

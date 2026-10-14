@@ -68,6 +68,7 @@ export interface VerificationResult {
   limitations?: string[] // Limitações específicas desta consulta
   evidences?: Evidence[] // Evidências estruturadas
   sources: Source[]
+  analyzedSource?: { url: string; finalUrl: string; domain: string; title?: string; publishedDate?: string }
   analyzedAt: string // ISO
 }
 
@@ -100,4 +101,3 @@ export type VerifyStatus =
   | 'empty'
   | 'source-unavailable'
   | 'unsupported-format'
-

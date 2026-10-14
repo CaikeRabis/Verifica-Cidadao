@@ -12,6 +12,33 @@ export const defaultFetcher: PageFetcher = (url) => fetchText(url, { timeoutMs: 
 
 const MIN_READABLE_CHARS = 200
 
+export interface AnalyzedPage {
+  url: string
+  finalUrl: string
+  domain: string
+  title?: string
+  publishedDate?: string
+  author?: string
+  text: string
+}
+
+/** Lê o conteúdo enviado pelo cidadão pelo mesmo PageFetcher/safeFetch das fontes externas. */
+export async function readAnalyzedPage(url: string, fetcher: PageFetcher = defaultFetcher): Promise<AnalyzedPage> {
+  const page = await fetcher(url)
+  if (!page.contentType.includes('text/html')) throw new Error('UNSUPPORTED_CONTENT_TYPE')
+  const extracted = extractPage(page.body)
+  if (extracted.text.length < MIN_READABLE_CHARS) throw new Error('INSUFFICIENT_CONTENT')
+  return {
+    url,
+    finalUrl: page.finalUrl,
+    domain: domainOf(page.finalUrl),
+    title: extracted.title || undefined,
+    publishedDate: extracted.publishedAt,
+    author: extracted.author,
+    text: extracted.text,
+  }
+}
+
 /**
  * Abre cada fonte selecionada. Só recebe `readStatus: 'read'` quem teve a página
  * efetivamente baixada e com texto suficiente. Falhou → 'snippet-only' (há só o

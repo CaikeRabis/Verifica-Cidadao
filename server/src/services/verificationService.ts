@@ -16,6 +16,7 @@ import type {
   Stance,
   ValidEvidence,
   VerificationResult,
+  AnalyzedSource,
 } from '../types'
 import type { AiService } from './aiService'
 import { classify } from './classification'
@@ -66,6 +67,12 @@ export interface VerificationDeps {
   maxSources?: number
   /** Diagnóstico interno, usado pela bateria real; não faz parte da resposta da API. */
   trace?: PipelineTrace
+}
+
+export interface VerificationOptions {
+  /** Texto limpo da página analisada; a URL continua sendo a query exposta. */
+  claimInput?: string
+  analyzedSource?: AnalyzedSource
 }
 
 /**
@@ -131,6 +138,7 @@ interface BuildArgs {
   confidenceExplanation: string
   humanReason?: string
   limitations: string[]
+  analyzedSource?: AnalyzedSource
 }
 
 function buildResult(a: BuildArgs): VerificationResult {
@@ -154,6 +162,7 @@ function buildResult(a: BuildArgs): VerificationResult {
     limitations: a.limitations,
     evidences: a.evidences ?? [],
     sources: a.sources.map(toApiSource),
+    analyzedSource: a.analyzedSource,
     analyzedAt: a.now.toISOString(),
   }
 }
@@ -161,23 +170,24 @@ function buildResult(a: BuildArgs): VerificationResult {
 const LOW = 'Pouca base documental para uma conclusão: o resultado depende de leitura humana das fontes.'
 
 /** Pipeline v0.2: claims → busca → seleção → leitura → evidências → classificação → segurança → resposta. */
-export async function verify(input: string, deps: VerificationDeps): Promise<VerificationResult> {
+export async function verify(input: string, deps: VerificationDeps, options: VerificationOptions = {}): Promise<VerificationResult> {
   const pipelineStarted = performance.now()
   const now = (deps.now ?? (() => new Date()))()
   const requestId = randomUUID().slice(0, 8)
   const fetcher = deps.fetcher ?? defaultFetcher
-  const base = { requestId, input, now }
+  const base = { requestId, input, now, analyzedSource: options.analyzedSource }
   const limitations: string[] = []
 
   // 1. Claims (falha da IA aqui interrompe: não há o que verificar)
   const claimsStarted = performance.now()
-  let drafts = await deps.ai.extractClaims(input)
+  const claimInput = options.claimInput ?? input
+  let drafts = await deps.ai.extractClaims(claimInput)
   deps.trace && (deps.trace.timingsMs.claimExtraction = Math.round(performance.now() - claimsStarted))
   deps.trace?.aiCalls.push({ purpose: 'claim-extraction', durationMs: deps.trace.timingsMs.claimExtraction, aiAttempt: 1, retryTriggered: false })
   let claims = normalizeClaims(drafts)
   if (claims.length === 0) {
     const retryStarted = performance.now()
-    drafts = await deps.ai.extractClaims(input, { retry: true })
+    drafts = await deps.ai.extractClaims(claimInput, { retry: true })
     const retryDuration = Math.round(performance.now() - retryStarted)
     claims = normalizeClaims(drafts)
     if (deps.trace) {
@@ -206,6 +216,8 @@ export async function verify(input: string, deps: VerificationDeps): Promise<Ver
         const results = await deps.search.search(q, 6)
         deps.trace?.searchCalls.push({ claimId: c.id, query: q, durationMs: Math.round(performance.now() - queryStarted), resultCount: results.length, providers: [...new Set(results.map((item) => item.provider ?? 'unknown'))] })
         for (const item of results) {
+          // Conteúdo analisado nunca é fonte confirmatória de si mesmo.
+          if (options.analyzedSource && sameUrl(item.url, options.analyzedSource.finalUrl)) continue
           if (!seenUrls.has(item.url)) {
             seenUrls.add(item.url)
             merged.push(item)
@@ -400,6 +412,16 @@ export async function verify(input: string, deps: VerificationDeps): Promise<Ver
   })
   deps.trace && (deps.trace.timingsMs.totalPipeline = Math.round(performance.now() - pipelineStarted))
   return result
+}
+
+function sameUrl(a: string, b: string): boolean {
+  try {
+    const left = new URL(a); left.hash = ''
+    const right = new URL(b); right.hash = ''
+    return left.toString() === right.toString()
+  } catch {
+    return a === b
+  }
 }
 
 function withStatus(claims: Claim[], status: Record<string, Classification>, evidences: ApiEvidence[]): Claim[] {

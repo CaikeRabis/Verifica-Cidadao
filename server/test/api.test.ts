@@ -32,6 +32,12 @@ describe('Integração HTTP end-to-end do servidor', () => {
     async search(_query: string, _limit: number): Promise<SearchResult[]> {
       return [
         {
+          title: 'Cópia da página analisada',
+          url: 'https://exemplo.com/materia-final',
+          domain: 'exemplo.com',
+          snippet: 'Página enviada pelo cidadão.',
+        },
+        {
           title: 'Portal da Saúde',
           url: 'https://saude.gov.br/noticia',
           domain: 'saude.gov.br',
@@ -46,6 +52,15 @@ describe('Integração HTTP end-to-end do servidor', () => {
     const app = createApp(config, {
       ai: stubAi,
       search: stubSearch,
+      fetcher: async (url) => {
+        if (url.includes('vazia')) return { finalUrl: url, contentType: 'text/html', body: '<html><title>Vazia</title><main>curto</main></html>', truncated: false }
+        if (url.includes('pdf')) return { finalUrl: url, contentType: 'application/pdf', body: '', truncated: false }
+        if (url.includes('materia')) return {
+          finalUrl: 'https://exemplo.com/materia-final', contentType: 'text/html', truncated: false,
+          body: `<html><head><title>Notícia de teste</title><meta property="article:published_time" content="2024-01-02" /></head><article>${'O Ministério da Saúde repassou 45 milhões para reforço hospitalar. '.repeat(8)}</article></html>`,
+        }
+        return { finalUrl: url, contentType: 'text/html', body: `<article>${'O Ministério da Saúde repassou 45 milhões para reforço hospitalar. '.repeat(8)}</article>`, truncated: false }
+      },
     })
     server = app.listen(0)
     await new Promise((resolve) => server.once('listening', resolve))
@@ -97,5 +112,30 @@ describe('Integração HTTP end-to-end do servidor', () => {
     assert.ok(data.summary)
     assert.ok(data.explanation)
     assert.ok(['alta', 'media', 'baixa'].includes(data.confidence))
+  })
+
+  it('aceita URL pública, expõe conteúdo analisado e preserva fontes externas', async () => {
+    const res = await fetch(`${baseUrl}/api/verify`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ inputType: 'url', input: 'https://exemplo.com/materia' }),
+    })
+    assert.equal(res.status, 200)
+    const data = await res.json() as any
+    assert.equal(data.analyzedSource.finalUrl, 'https://exemplo.com/materia-final')
+    assert.equal(data.analyzedSource.title, 'Notícia de teste')
+    assert.equal(data.analyzedSource.publishedDate, '2024-01-02')
+    assert.ok(data.sources.every((source: any) => source.url !== data.analyzedSource.finalUrl))
+    assert.ok(data.sources.some((source: any) => source.domain === 'saude.gov.br'))
+  })
+
+  it('rejeita URL malformada, local, privada, formato não HTML e conteúdo insuficiente', async () => {
+    for (const input of ['nota sem protocolo', 'http://localhost/noticia', 'http://127.0.0.1/noticia']) {
+      const res = await fetch(`${baseUrl}/api/verify`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ inputType: 'url', input }) })
+      assert.equal(res.status, 422)
+    }
+    for (const [input, code] of [['https://exemplo.com/pdf', 'unsupported_format'], ['https://exemplo.com/vazia', 'insufficient_content']]) {
+      const res = await fetch(`${baseUrl}/api/verify`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ inputType: 'url', input }) })
+      assert.equal((await res.json() as any).error.code, code)
+    }
   })
 })

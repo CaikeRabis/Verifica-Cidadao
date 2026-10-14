@@ -5,6 +5,7 @@ import { ApiError } from './errors'
 import { toApiError, verifyRouter } from './routes/verify'
 import { OpenAiCompatibleService, type AiService } from './services/aiService'
 import { createSearchProvider, type SearchProvider } from './services/searchService'
+import type { PageFetcher } from './services/sourceReader'
 import { PIPELINE_VERSION } from './version'
 
 function rateLimiter(max: number, windowMs: number) {
@@ -22,7 +23,7 @@ function rateLimiter(max: number, windowMs: number) {
   }
 }
 
-export function createApp(config: Config, overrides: { ai?: AiService; search?: SearchProvider } = {}) {
+export function createApp(config: Config, overrides: { ai?: AiService; search?: SearchProvider; fetcher?: PageFetcher } = {}) {
   const app = express()
   app.disable('x-powered-by')
   app.set('trust proxy', 1)
@@ -50,6 +51,7 @@ export function createApp(config: Config, overrides: { ai?: AiService; search?: 
     verifyRouter({
       ai: overrides.ai ?? new OpenAiCompatibleService(config),
       search: overrides.search ?? createSearchProvider(config),
+      fetcher: overrides.fetcher,
     }),
   )
 
