@@ -87,6 +87,22 @@ function hasClearContext(claim: string, evidence: string): boolean {
   return claimWords.filter((word) => evidenceWords.has(word)).length >= 2
 }
 
+interface ObjectValue { value: string; object: string }
+/** Contagens só são comparáveis quando o numeral está ligado ao mesmo substantivo. */
+function objectValues(text: string): ObjectValue[] {
+  const out: ObjectValue[] = []
+  const rx = /\b(\d{1,3}(?:\.\d{3})*)\s+([a-záàâãéêíóôõúç]{3,})\b/gi
+  for (const match of text.matchAll(rx)) {
+    const value = normalizeNumber(match[1])
+    if (!value) continue
+    const object = match[2].normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/s$/, '')
+    // termos que identificam referências, não o objeto factual contado
+    if (['artigo', 'art', 'processo'].includes(object)) continue
+    out.push({ value, object })
+  }
+  return out
+}
+
 /**
  * Só decide quando há uma entidade estruturada do mesmo tipo em cada lado e
  * contexto lexical claro. Fora disso, retorna undefined para preservar a IA.
@@ -95,6 +111,12 @@ export function compareFactualClaim(claim: string, evidence: string): FactualCom
   if (!hasClearContext(claim, evidence)) return undefined
   const claimed = extractFactualEntities(claim)
   const found = extractFactualEntities(evidence)
+  const claimObjects = objectValues(claim)
+  const evidenceObjects = objectValues(evidence)
+  for (const left of claimObjects) {
+    const right = evidenceObjects.find((item) => item.object === left.object)
+    if (right) return { stance: left.value === right.value ? 'supports' : 'contradicts', kind: 'number' }
+  }
   // Ano compartilhado, por si só, não confirma uma afirmação que também traz
   // valor, percentual, data ou contagem. Isso evita aceitar uma fonte que só
   // menciona o mesmo período, mas não o objeto quantitativo alegado.

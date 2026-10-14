@@ -20,6 +20,15 @@ describe('Comparação factual determinística v0.2.1', () => {
     assert.equal(compare('O STF é composto por 15 ministros.', 'O STF é composto por 11 ministros.'), 'contradicts')
   })
 
+  it('associa contagens ao objeto factual correto', () => {
+    assert.equal(compare('O Senado possui 81 senadores.', 'O Senado é composto por 81 senadores e representa 26 estados.'), 'supports')
+    assert.equal(compare('O Senado possui 81 senadores.', 'O Senado é composto por 80 senadores.'), 'contradicts')
+    assert.equal(compare('O STF possui 11 ministros.', 'O STF é composto por 11 ministros.'), 'supports')
+    assert.equal(compare('O STF possui 15 ministros.', 'O STF é composto por 11 ministros.'), 'contradicts')
+    assert.equal(compare('O STF possui 11 ministros.', 'O STF julgou 11 processos.'), undefined)
+    assert.equal(compare('O Senado possui 81 senadores.', 'O artigo 81 da Constituição trata do Senado.'), undefined)
+  })
+
   it('normaliza datas completas entre formatos e detecta divergência', () => {
     assert.equal(compare('Brasília foi inaugurada em 21/04/1960.', 'Brasília foi inaugurada em 21 de abril de 1960.'), 'supports')
     assert.equal(compare('Brasília foi inaugurada em 21/04/1961.', 'Brasília foi inaugurada em 21 de abril de 1960.'), 'contradicts')
