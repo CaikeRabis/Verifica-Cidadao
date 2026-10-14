@@ -36,3 +36,4 @@ app/node_modules
 # Relatórios locais gerados pelo runner do golden set
 server/test/golden/results/
 server/test/real/results/
+server/test/url/results/

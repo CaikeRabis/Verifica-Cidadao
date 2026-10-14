@@ -10,7 +10,8 @@
     "build": "tsc --noEmit",
     "test": "node --import tsx --test test/*.test.ts",
     "test:golden": "tsx test/golden/run.ts",
-    "test:real": "tsx test/real/run.ts"
+    "test:real": "tsx test/real/run.ts",
+    "test:url:real": "tsx test/url/run.ts"
   },
   "dependencies": {
     "express": "^4.21.2"
