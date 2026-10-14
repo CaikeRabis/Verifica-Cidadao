@@ -98,6 +98,8 @@ export function classify(input: ClassifyInput): ClassifyOutput {
       classification = 'analise-humana'
     } else if (secondary.some((verdict) => verdict.status === 'contradita' || verdict.status === 'parcialmente-confirmada')) {
       classification = 'parcialmente-confirmada'
+    } else if (secondary.some((verdict, index) => claims[index >= primaryIndex ? index + 1 : index]?.material !== false && verdict.status === 'sem-evidencias')) {
+      classification = 'parcialmente-confirmada'
     }
   }
 

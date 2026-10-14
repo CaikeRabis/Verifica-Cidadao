@@ -28,6 +28,8 @@ export interface Claim {
   text: string
   /** Papel interno na agregação; a UI ainda não o expõe. */
   role: ClaimRole
+  /** Secondary sem indicação explícita é tratada conservadoramente como material. */
+  material?: boolean
   status?: Classification
   evidenceIds?: string[]
 }

@@ -79,7 +79,7 @@ export function normalizeClaims(drafts: { text: string; role?: ClaimRole }[]): C
         ? 'primary'
         : 'secondary'
     if (role === 'primary') primaryAssigned = true
-    return { id: `c${index + 1}`, text: draft.text, role }
+    return { id: `c${index + 1}`, text: draft.text, role, material: role === 'secondary' }
   })
 }
 
