@@ -29,6 +29,10 @@ dist-ssr
 .env.*
 !.env.example
 
+# Materiais locais de referência e identidade visual
+MANUAL DA MARCA.pdf
+Sobre o Projeto.docx
+
 # Build e cache
 app/dist
 app/node_modules
