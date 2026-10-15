@@ -39,7 +39,7 @@ async function main() {
     const trace: PipelineTrace = {
       timingsMs: {}, queries: {}, searchResults: {}, searchCalls: [], searchAttempts: [], selectedSources: [], fetches: [], aiCalls: [],
       evidenceCandidates: [], rejectedEvidences: [], acceptedEvidenceTrace: [], windows: [], acceptedEvidences: 0, discardedEvidences: 0,
-      retries: { extraAiCalls: 0, evidence: [] }, deterministicRecoveries: [], selfReferenceRejections: [],
+      retries: { extraAiCalls: 0, evidence: [] }, deterministicRecoveries: [], selfReferenceRejections: [], secondaryRecovery: [], secondaryTargetedSearches: 0, additionalSearchRequests: 0, additionalBraveFallbackRequests: 0, secondaryRecoveryLatencyMs: 0,
     }
     try {
       const result = await verify(input, { ...deps, trace })

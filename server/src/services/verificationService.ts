@@ -53,6 +53,25 @@ export interface PipelineTrace {
   }
   deterministicRecoveries: DeterministicRecoveryTrace[]
   selfReferenceRejections: { stage: 'search' | 'source' | 'evidence'; candidateUrl: string; normalizedCandidateKey: string; analyzedOriginalKey: string; analyzedFinalKey: string; rejected: true; reason: 'ANALYZED_SOURCE_SELF_REFERENCE' }[]
+  secondaryRecovery: {
+    claimId: string
+    material: boolean
+    coverageBeforeRecovery: boolean
+    targetedSearchTriggered: boolean
+    targetedQuery?: string
+    searchProvider: string[]
+    fallbackUsed: boolean
+    selectedSources: string[]
+    readSources: string[]
+    evidences: { sourceId: string; stance: Stance }[]
+    coverageAfterRecovery: boolean
+    finalStatus?: Classification
+    latencyAddedMs: number
+  }[]
+  secondaryTargetedSearches: number
+  additionalSearchRequests: number
+  additionalBraveFallbackRequests: number
+  secondaryRecoveryLatencyMs: number
 }
 
 function evidenceObserver(trace?: PipelineTrace) {
@@ -87,7 +106,7 @@ export interface VerificationOptions {
  * claim válida vira principal e as demais, secundárias. Há sempre no máximo uma
  * principal no pipeline.
  */
-export function normalizeClaims(drafts: { text: string; role?: ClaimRole }[]): Claim[] {
+export function normalizeClaims(drafts: { text: string; role?: ClaimRole; material?: boolean }[]): Claim[] {
   let primaryAssigned = false
   return drafts.slice(0, 3).map((draft, index) => {
     const requestedPrimary = draft.role === 'primary'
@@ -97,7 +116,7 @@ export function normalizeClaims(drafts: { text: string; role?: ClaimRole }[]): C
         ? 'primary'
         : 'secondary'
     if (role === 'primary') primaryAssigned = true
-    return { id: `c${index + 1}`, text: draft.text, role, material: role === 'secondary' }
+    return { id: `c${index + 1}`, text: draft.text, role, material: role === 'secondary' ? draft.material !== false : undefined }
   })
 }
 
@@ -289,6 +308,7 @@ export async function verify(input: string, deps: VerificationDeps, options: Ver
   // 4. Leitura real das páginas
   const readingStarted = performance.now()
   const fetchedSources = await readSources(selected, fetcher, () => now, 0, (event) => deps.trace?.fetches.push(event))
+  const allFetchedSources = [...fetchedSources]
   const selfSourceIds = new Set(fetchedSources.filter((source) => isSelfReference(source.url)).map((source) => source.id))
   for (const source of fetchedSources.filter((item) => selfSourceIds.has(item.id))) recordSelfReference('source', source.url)
   const sources = fetchedSources.filter((source) => !selfSourceIds.has(source.id))
@@ -319,7 +339,7 @@ export async function verify(input: string, deps: VerificationDeps, options: Ver
     deps.trace?.aiCalls.push({ purpose: 'evidence-extraction', durationMs: Math.round(performance.now() - extractionStarted), aiAttempt: 1, retryTriggered: false })
     const validate = (evidence: RawEvidence[], scopedClaims: Claim[]) => {
       const external = evidence.filter((item) => {
-        const source = fetchedSources.find((candidate) => candidate.id === item.sourceId)
+        const source = allFetchedSources.find((candidate) => candidate.id === item.sourceId)
         if (!source || !selfSourceIds.has(source.id)) return true
         recordSelfReference('evidence', source.url)
         deps.trace?.rejectedEvidences.push({ claimId: item.claimId, sourceId: item.sourceId, quote: item.quote, reason: 'ANALYZED_SOURCE_SELF_REFERENCE' })
@@ -381,8 +401,96 @@ export async function verify(input: string, deps: VerificationDeps, options: Ver
       }
     }
 
-    // 5b. SEGUNDA RODADA CONTROLADA: se encontrou fontes mas nenhuma evidência válida
-    if (validEv.length === 0 && read.length > 0) {
+    // 5b. Cobertura externa dirigida: no modo URL, uma secondary material que
+    // permaneceu descoberta recebe no máximo uma busca própria. A consulta é
+    // derivada exclusivamente da secondary, sem reutilizar contexto da primary.
+    if (options.analyzedSource) {
+      const secondaryEntries = new Map<string, PipelineTrace['secondaryRecovery'][number]>()
+      for (const claim of claims.filter((item) => item.role === 'secondary')) {
+        const entry: PipelineTrace['secondaryRecovery'][number] = {
+          claimId: claim.id,
+          material: claim.material !== false,
+          coverageBeforeRecovery: validEv.some((evidence) => evidence.claimId === claim.id),
+          targetedSearchTriggered: false,
+          searchProvider: [] as string[],
+          fallbackUsed: false,
+          selectedSources: [] as string[],
+          readSources: [] as string[],
+          evidences: [] as { sourceId: string; stance: Stance }[],
+          coverageAfterRecovery: validEv.some((evidence) => evidence.claimId === claim.id),
+          latencyAddedMs: 0,
+        }
+        secondaryEntries.set(claim.id, entry)
+        deps.trace?.secondaryRecovery.push(entry)
+      }
+      const uncoveredSecondary = claims.filter((claim) =>
+        claim.role === 'secondary' && claim.material !== false && !validEv.some((evidence) => evidence.claimId === claim.id),
+      )
+      for (const claim of uncoveredSecondary) {
+        const recoveryStarted = performance.now()
+        const targetedQuery = `${extractKeywords(claim.text).slice(0, 7).join(' ')} dados oficiais`.trim().slice(0, 150)
+        const entry = secondaryEntries.get(claim.id)!
+        entry.targetedSearchTriggered = true
+        entry.targetedQuery = targetedQuery
+        if (deps.trace) deps.trace.secondaryTargetedSearches++
+        try {
+          const attemptsBefore = deps.trace?.searchAttempts.length ?? 0
+          const queryStarted = performance.now()
+          const results = await search(claim.id, targetedQuery, 6)
+          const attempts = deps.trace?.searchAttempts.slice(attemptsBefore) ?? []
+          entry.searchProvider = [...new Set(attempts.map((attempt) => attempt.provider))]
+          entry.fallbackUsed = attempts.some((attempt) => attempt.fallbackTriggered)
+          if (deps.trace) {
+            deps.trace.additionalSearchRequests += attempts.length
+            deps.trace.additionalBraveFallbackRequests += attempts.filter((attempt) => attempt.provider === 'brave').length
+            deps.trace.searchCalls.push({ claimId: claim.id, query: targetedQuery, durationMs: Math.round(performance.now() - queryStarted), resultCount: results.length, providers: [...new Set(results.map((item) => item.provider ?? 'unknown'))] })
+          }
+          const knownUrls = new Set(allFetchedSources.map((source) => source.url))
+          const externalResults = results.filter((item) => {
+            if (isSelfReference(item.url)) { recordSelfReference('search', item.url); return false }
+            return !knownUrls.has(item.url)
+          })
+          const candidates = selectSources([{ results: externalResults, claimText: claim.text }], 3, 3)
+          entry.selectedSources = candidates.map((source) => source.url)
+          deps.trace?.selectedSources.push(...candidates.map((source) => ({ title: source.title, url: source.url, domain: source.domain, tier: source.tier })))
+          if (candidates.length > 0) {
+            const recoveredSources = await readSources(candidates, fetcher, () => now, allFetchedSources.length, (event) => deps.trace?.fetches.push(event))
+            allFetchedSources.push(...recoveredSources)
+            const externalSources = recoveredSources.filter((source) => {
+              if (!isSelfReference(source.url)) return true
+              selfSourceIds.add(source.id)
+              recordSelfReference('source', source.url)
+              return false
+            })
+            sources.push(...externalSources)
+            const recoveredRead = externalSources.filter((source) => source.readStatus === 'read')
+            entry.readSources = recoveredRead.map((source) => source.url)
+            if (deps.trace) deps.trace.windows.push(...recoveredRead.flatMap((source) => selectRelevantWindows(source.id, source.text ?? '', [claim], 6000).map((window) => ({ sourceId: source.id, ...window }))))
+            if (recoveredRead.length > 0) {
+              const extractionStarted = performance.now()
+              const rawRecovery = await deps.ai.extractEvidence([claim], recoveredRead)
+              deps.trace?.aiCalls.push({ purpose: 'second-round-evidence-extraction', durationMs: Math.round(performance.now() - extractionStarted), aiAttempt: 1, retryTriggered: false })
+              const recoveredValidation = validate(rawRecovery, [claim])
+              discarded += recoveredValidation.discarded
+              entry.evidences = recoveredValidation.valid.map((evidence) => ({ sourceId: evidence.sourceId, stance: evidence.stance }))
+              if (recoveredValidation.valid.length > 0) {
+                validEv = [...validEv, ...recoveredValidation.valid].map((evidence, index) => ({ ...evidence, id: `e${index + 1}` }))
+              }
+            }
+          }
+        } catch {
+          // A recuperação de uma secondary é opcional: falhas não interrompem a verificação principal.
+        } finally {
+          entry.coverageAfterRecovery = validEv.some((evidence) => evidence.claimId === claim.id)
+          entry.latencyAddedMs = Math.round(performance.now() - recoveryStarted)
+          if (deps.trace) deps.trace.secondaryRecoveryLatencyMs += entry.latencyAddedMs
+        }
+      }
+    }
+
+    // Segunda rodada legada do modo texto. No modo URL, a recuperação acima já
+    // limita a uma rodada por secondary material e evita reconsultas ocultas.
+    if (!options.analyzedSource && validEv.length === 0 && read.length > 0) {
       const readUrls = new Set(sources.map((s) => s.url))
       const retryMerged: SearchResult[] = []
       for (const c of claims) {
@@ -454,6 +562,7 @@ export async function verify(input: string, deps: VerificationDeps, options: Ver
   // 6. Classificação por regras + robustez
   const classificationStarted = performance.now()
   const out = classify({ claims, evidences: validEv, sources })
+  for (const recovery of deps.trace?.secondaryRecovery ?? []) recovery.finalStatus = out.claimStatus[recovery.claimId]
   deps.trace && (deps.trace.timingsMs.classification = Math.round(performance.now() - classificationStarted))
 
   // 7. Limitações de qualidade
