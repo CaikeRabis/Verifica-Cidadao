@@ -8,7 +8,7 @@ const links = [
   { to: '/', label: 'Início', end: true },
   { to: '/como-funciona', label: 'Como funciona' },
   { to: '/fontes', label: 'Fontes' },
-  { to: '/educacao-cidada', label: 'Educação Cidadã' },
+  { to: '/educacao', label: 'Educação Cidadã' },
   { to: '/sobre', label: 'Sobre' },
 ]
 

@@ -147,7 +147,7 @@ export default function ResultCard({ result, onNew }: Props) {
           <Button variant="outline" onClick={onNew} id="btn-nova-verificacao">
             <Icon name="search" size={18} /> Nova verificação
           </Button>
-          <Button variant="ghost" to="/educacao-cidada">
+          <Button variant="ghost" to="/educacao">
             <Icon name="book" size={18} /> Aprender a verificar
           </Button>
         </div>

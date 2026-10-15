@@ -1,9 +1,10 @@
-import { Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes } from 'react-router-dom'
 import MainLayout from './layouts/MainLayout'
 import HomePage from './pages/HomePage'
 import HowItWorksPage from './pages/HowItWorksPage'
 import SourcesPage from './pages/SourcesPage'
 import EducationPage from './pages/EducationPage'
+import EducationManualPage from './pages/EducationManualPage'
 import AboutPage from './pages/AboutPage'
 import PlaceholderPage from './pages/PlaceholderPage'
 import NotFoundPage from './pages/NotFoundPage'
@@ -15,7 +16,9 @@ export default function App() {
         <Route index element={<HomePage />} />
         <Route path="como-funciona" element={<HowItWorksPage />} />
         <Route path="fontes" element={<SourcesPage />} />
-        <Route path="educacao-cidada" element={<EducationPage />} />
+        <Route path="educacao" element={<EducationPage />} />
+        <Route path="educacao/:slug" element={<EducationManualPage />} />
+        <Route path="educacao-cidada" element={<Navigate to="/educacao" replace />} />
         <Route path="sobre" element={<AboutPage />} />
         <Route path="privacidade" element={<PlaceholderPage kind="privacidade" />} />
         <Route path="termos" element={<PlaceholderPage kind="termos" />} />

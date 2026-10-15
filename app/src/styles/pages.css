@@ -78,5 +78,33 @@ main { flex: 1; }
 .prose li { position: relative; padding-left: 26px; }
 .prose li::before { content: ''; position: absolute; left: 4px; top: 0.55em; width: 10px; height: 10px; border-radius: 3px; background: var(--vc-green); }
 
+/* ---------- Manuais de educação ---------- */
+.education-manual__container { max-width: 820px; }
+.education-breadcrumb { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: #5b6675; font-size: 0.9rem; margin-bottom: var(--sp-3); }
+.education-breadcrumb a, .education-manual__navigation a, .education-manual__back { color: var(--vc-blue); font-weight: 700; }
+.education-manual__duration { display: inline-flex; align-items: center; gap: 7px; color: #5b6675; font-size: 0.92rem; margin-bottom: var(--sp-5); }
+.education-manual__body { display: grid; gap: var(--sp-4); }
+.education-manual__body > p, .education-manual__section p, .education-summary p, .education-verifier p { max-width: 720px; }
+.education-manual__section { display: grid; gap: var(--sp-3); margin-top: var(--sp-3); }
+.education-manual__section h2, .education-summary h2, .education-verifier h2 { color: var(--vc-blue-deep); font-size: clamp(1.25rem, 2.5vw, 1.6rem); }
+.education-manual__section ul, .education-checklist ul { display: grid; gap: 10px; padding-left: 24px; }
+.education-manual__section li::marker { color: var(--vc-green); }
+.education-callout { padding: var(--sp-4); border-radius: var(--r-md); border-left: 4px solid; }
+.education-callout h3 { font-size: 1rem; margin-bottom: 4px; }
+.education-callout--example { background: var(--vc-blue-50); border-color: var(--vc-blue); }
+.education-callout--attention { background: var(--vc-yellow-50); border-color: var(--vc-yellow); }
+.education-summary { display: grid; gap: var(--sp-2); padding: var(--sp-5); background: var(--vc-green-50); border-radius: var(--r-lg); border: 1px solid #bce6d3; }
+.education-verifier { display: grid; grid-template-columns: auto 1fr; gap: var(--sp-3); align-items: start; padding: var(--sp-5); background: var(--vc-blue-deep); color: #fff; border-radius: var(--r-lg); }
+.education-verifier h2 { color: #fff; }
+.education-verifier p { margin: 6px 0 var(--sp-4); color: #fff; }
+.education-verifier .btn { background: var(--vc-yellow); color: var(--vc-blue-deep); }
+.education-verifier__icon { display: grid; place-items: center; width: 46px; height: 46px; border-radius: 50%; background: rgba(255,255,255,.16); }
+.education-manual__disclaimer { padding: var(--sp-4); border-left: 4px solid var(--vc-green); background: var(--vc-gray-50); font-size: 0.94rem; }
+.education-manual__principle { font-size: 0.94rem; color: var(--vc-blue-deep); }
+.education-manual__navigation { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); margin: var(--sp-7) 0 var(--sp-4); padding-top: var(--sp-4); border-top: 1px solid var(--vc-border); }
+.education-manual__navigation a:last-child { text-align: right; }
+.education-manual__back { display: inline-block; }
+@media (max-width: 560px) { .education-verifier { grid-template-columns: 1fr; } .education-manual__navigation { grid-template-columns: 1fr; } .education-manual__navigation a:last-child { text-align: left; } }
+
 .not-found { text-align: center; padding: var(--sp-9) 0; }
 .not-found .state__icon { margin: 0 auto var(--sp-4); }

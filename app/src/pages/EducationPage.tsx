@@ -8,8 +8,7 @@ export default function EducationPage() {
   return (
     <>
       <PageHero eyebrow="Módulo" title="Educação Cidadã">
-        Conteúdos para entender transparência, reconhecer fontes confiáveis e participar do controle social. Os
-        materiais completos chegam em breve.
+        Conteúdos para entender transparência, reconhecer fontes confiáveis e participar do controle social.
       </PageHero>
       <section className="section">
         <div className="container">

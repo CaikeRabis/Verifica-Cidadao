@@ -101,7 +101,7 @@ export default function HomePage() {
           <div className="cta-band">
             <h2>Educação Cidadã</h2>
             <p>Aprenda a reconhecer fontes confiáveis, entender dados públicos e participar do controle social.</p>
-            <Link to="/educacao-cidada" className="btn btn--primary">
+            <Link to="/educacao" className="btn btn--primary">
               Explorar conteúdos <Icon name="arrow" size={20} />
             </Link>
           </div>

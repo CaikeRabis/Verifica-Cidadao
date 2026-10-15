@@ -1,4 +1,5 @@
 import { educationTopics } from '../data/content'
+import { Link } from 'react-router-dom'
 import Icon from './Icon'
 
 export default function EducationGrid() {
@@ -15,7 +16,7 @@ export default function EducationGrid() {
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
               <Icon name="clock" size={16} /> {t.duration}
             </span>
-            <span className="tag tag--soon" style={{ marginTop: 0 }}>Em breve</span>
+            <Link to={`/educacao/${t.id}`} className="edu-card__link">Ler manual →</Link>
           </div>
         </article>
       ))}

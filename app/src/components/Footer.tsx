@@ -18,7 +18,7 @@ export default function Footer() {
             <ul>
               <li><Link to="/sobre">Sobre</Link></li>
               <li><Link to="/fontes">Fontes</Link></li>
-              <li><Link to="/educacao-cidada">Educação Cidadã</Link></li>
+              <li><Link to="/educacao">Educação Cidadã</Link></li>
               <li><Link to="/como-funciona">Como funciona</Link></li>
             </ul>
           </div>

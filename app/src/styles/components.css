@@ -1236,6 +1236,8 @@
 .edu-card:nth-child(3n + 3) .edu-card__icon { background: var(--vc-yellow); color: var(--vc-blue-deep); }
 .edu-card p { font-size: 0.95rem; flex: 1; }
 .edu-card__foot { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); font-size: 0.85rem; color: #5b6675; }
+.edu-card__link { color: var(--vc-blue); font-weight: 700; white-space: nowrap; }
+.edu-card__link:hover { color: var(--vc-green-700); }
 
 /* ---------- Estados (loading / vazio / erro) ---------- */
 .state {
