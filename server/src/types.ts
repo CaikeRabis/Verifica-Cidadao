@@ -31,6 +31,7 @@ export interface Claim {
   role: ClaimRole
   /** Secondary sem indicação explícita é tratada conservadoramente como material. */
   material?: boolean
+  context?: { temporal?: { year?: number; source: 'explicit-claim' | 'inherited-primary' | 'surrounding-content' | 'none' } }
   status?: Classification
   evidenceIds?: string[]
 }

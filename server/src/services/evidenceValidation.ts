@@ -71,7 +71,7 @@ const ALIASES: [RegExp, string][] = [
 const canonical = (text: string) => ALIASES.reduce((value, [pattern, replacement]) => value.replace(pattern, replacement), text)
 
 /** Relevância mínima: a fonte pode ser confiável, mas ainda não responder à claim. */
-function relevance(claim: Claim, quote: string, stance: RawEvidence['stance'], factual: ReturnType<typeof compareFactualClaim>) {
+function relevance(claim: Claim, quote: string, stance: RawEvidence['stance'], factual: ReturnType<typeof compareFactualClaim>, sourceText = '') {
   const normalizedClaim = canonical(claim.text)
   const normalizedQuote = canonical(quote)
   const claimWords = extractKeywords(normalizedClaim).filter((word) => word.length >= 3 && !/^\d/.test(word))
@@ -82,7 +82,10 @@ function relevance(claim: Claim, quote: string, stance: RawEvidence['stance'], f
   const entityMatch = claimWords.some((word) => ['stf', 'senado', 'camara', 'sus', 'df'].includes(word) && quoteWords.has(word))
   const objectMatch = claimWords.filter((word) => !['stf', 'senado', 'camara', 'sus', 'df'].includes(word)).some((word) => quoteWords.has(word))
   const valueMatch = !!(factual ?? componentFactual)
-  const historicalConflict = stance === 'supports' && HISTORICAL_CONTEXT.test(quote) && !HISTORICAL_CONTEXT.test(claim.text)
+  const claimedYear = claim.context?.temporal?.year
+  const sourceYears = [...sourceText.matchAll(/\b(?:19|20)\d{2}\b/g)].map((match) => Number(match[0]))
+  const contextualYearConflict = stance === 'contradicts' && claim.context?.temporal?.source === 'inherited-primary' && !!claimedYear && sourceYears.some((year) => year !== claimedYear) && !sourceYears.includes(claimedYear)
+  const historicalConflict = (stance === 'supports' && HISTORICAL_CONTEXT.test(quote) && !HISTORICAL_CONTEXT.test(claim.text)) || contextualYearConflict
   const checks = { lexicalOverlap: overlap >= 2, lexicalOverlapCount: overlap, entityMatch, aliasMatch: entityMatch, objectMatch, valueMatch, temporalMatch: !historicalConflict, lexicalMatch: overlap >= 2, numericRequired, historicalConflict }
   if (overlap < 2 && !(entityMatch && objectMatch && valueMatch)) return { ok: false, reason: 'LOW_LEXICAL_RELEVANCE' as const, checks }
 
@@ -126,7 +129,7 @@ export function validateEvidences(raw: RawEvidence[], claims: Claim[], sources: 
     const stance = factual?.stance === 'contradicts' && e.stance === 'insufficient' && lacksInstitutionalEntity
       ? 'insufficient'
       : factual?.stance ?? e.stance
-    const relevanceResult = relevance(claim, e.quote, stance, factual)
+    const relevanceResult = relevance(claim, e.quote, stance, factual, source.text)
     if (!relevanceResult.ok) {
       discarded++
       observer?.rejected({ ...e, reason: relevanceResult.reason!, relevanceChecks: relevanceResult.checks })

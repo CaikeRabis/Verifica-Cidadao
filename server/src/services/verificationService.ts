@@ -120,7 +120,20 @@ export function normalizeClaims(drafts: { text: string; role?: ClaimRole; materi
         ? 'primary'
         : 'secondary'
     if (role === 'primary') primaryAssigned = true
-    return { id: `c${index + 1}`, text: draft.text, role, material: role === 'secondary' ? draft.material !== false : undefined }
+    const year = draft.text.match(/\b(?:19|20)\d{2}\b/)?.[0]
+    return { id: `c${index + 1}`, text: draft.text, role, material: role === 'secondary' ? draft.material !== false : undefined, context: year ? { temporal: { year: Number(year), source: 'explicit-claim' } } : undefined }
+  })
+}
+
+function preserveSecondaryTemporalContext(claims: Claim[], content?: string): Claim[] {
+  const primary = claims.find((claim) => claim.role === 'primary')
+  const year = primary?.context?.temporal?.year
+  if (!primary || !year || !content?.includes(String(year))) return claims
+  const primaryWords = extractKeywords(primary.text).filter((word) => word.length >= 5)
+  return claims.map((claim) => {
+    if (claim.role !== 'secondary' || claim.context?.temporal?.year) return claim
+    const shared = extractKeywords(claim.text).some((word) => word.length >= 5 && primaryWords.includes(word))
+    return shared ? { ...claim, text: `${claim.text.replace(/\.?$/, '')} em ${year}.`, context: { temporal: { year, source: 'inherited-primary' } } } : claim
   })
 }
 
@@ -257,12 +270,12 @@ export async function verify(input: string, deps: VerificationDeps, options: Ver
   let drafts = await deps.ai.extractClaims(claimInput)
   deps.trace && (deps.trace.timingsMs.claimExtraction = Math.round(performance.now() - claimsStarted))
   deps.trace?.aiCalls.push({ purpose: 'claim-extraction', durationMs: deps.trace.timingsMs.claimExtraction, aiAttempt: 1, retryTriggered: false })
-  let claims = normalizeClaims(drafts)
+  let claims = preserveSecondaryTemporalContext(normalizeClaims(drafts), options.analyzedSource ? claimInput : undefined)
   if (claims.length === 0) {
     const retryStarted = performance.now()
     drafts = await deps.ai.extractClaims(claimInput, { retry: true })
     const retryDuration = Math.round(performance.now() - retryStarted)
-    claims = normalizeClaims(drafts)
+    claims = preserveSecondaryTemporalContext(normalizeClaims(drafts), options.analyzedSource ? claimInput : undefined)
     if (deps.trace) {
       deps.trace.aiCalls.push({ purpose: 'claim-extraction', durationMs: retryDuration, aiAttempt: 2, retryTriggered: true, retryReason: 'ZERO_VALID_CLAIMS' })
       deps.trace.retries.extraAiCalls++
