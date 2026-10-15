@@ -9,6 +9,7 @@ export interface Config {
   braveApiKey: string
   rateLimitMax: number
   rateLimitWindowMs: number
+  verificationTimeBudgetMs: number
 }
 
 const int = (v: string | undefined, d: number) => {
@@ -28,5 +29,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     braveApiKey: env.BRAVE_API_KEY?.trim() || '',
     rateLimitMax: int(env.RATE_LIMIT_MAX, 10),
     rateLimitWindowMs: int(env.RATE_LIMIT_WINDOW_MS, 600000),
+    verificationTimeBudgetMs: int(env.VERIFICATION_TIME_BUDGET_MS, 25000),
   }
 }

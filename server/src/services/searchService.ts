@@ -4,9 +4,10 @@ import { decodeEntities, stripTags } from '../lib/html'
 import { fetchText } from '../lib/safeFetch'
 import { domainOf } from '../lib/sourceRanking'
 import type { SearchResult } from '../types'
+import { performance } from 'node:perf_hooks'
 
 export interface SearchProvider {
-  search(query: string, limit: number): Promise<SearchResult[]>
+  search(query: string, limit: number, options?: { timeoutMs?: number; canFallback?: () => boolean }): Promise<SearchResult[]>
   /** Consome tentativas da última busca; usado somente na telemetria interna. */
   takeAttempts?(): SearchAttempt[]
 }
@@ -19,6 +20,8 @@ export interface SearchAttempt {
   fallbackTriggered: boolean
   fallbackProvider?: 'brave'
   fallbackResultCount?: number
+  fallbackSkippedReason?: 'TIME_BUDGET_EXHAUSTED'
+  durationMs?: number
 }
 
 const http2xx = (url: string) => /^https?:\/\//i.test(url)
@@ -32,7 +35,7 @@ export class BraveSearchProvider implements SearchProvider {
     private fetchImpl: typeof fetch = fetch,
   ) {}
 
-  async search(query: string, limit: number): Promise<SearchResult[]> {
+  async search(query: string, limit: number, options: { timeoutMs?: number } = {}): Promise<SearchResult[]> {
     if (!this.apiKey) throw new SearchUnavailableError('BRAVE_API_KEY ausente')
     const cacheKey = `brave:${query}:${limit}`
     if (searchCache.has(cacheKey)) return searchCache.get(cacheKey)!
@@ -42,7 +45,7 @@ export class BraveSearchProvider implements SearchProvider {
     try {
       res = await this.fetchImpl(url, {
         headers: { Accept: 'application/json', 'X-Subscription-Token': this.apiKey },
-        signal: AbortSignal.timeout(8000),
+        signal: AbortSignal.timeout(Math.min(8000, options.timeoutMs ?? 8000)),
       })
     } catch {
       throw new SearchUnavailableError('falha de rede na busca', 'NETWORK_FAILURE')
@@ -72,7 +75,7 @@ export class BraveSearchProvider implements SearchProvider {
  * para o adaptador central, que pode acionar Brave de modo auditável.
  */
 export class DuckDuckGoDemoProvider implements SearchProvider {
-  async search(query: string, limit: number): Promise<SearchResult[]> {
+  async search(query: string, limit: number, options: { timeoutMs?: number } = {}): Promise<SearchResult[]> {
     const cacheKey = `ddg:${query}:${limit}`
     if (searchCache.has(cacheKey)) return searchCache.get(cacheKey)!
 
@@ -80,7 +83,7 @@ export class DuckDuckGoDemoProvider implements SearchProvider {
     try {
       html = (
         await fetchText(`https://duckduckgo.com/html/?q=${encodeURIComponent(query)}&kl=br-pt`, {
-          timeoutMs: 8000,
+          timeoutMs: Math.min(8000, options.timeoutMs ?? 8000),
           headers: {
             'User-Agent':
               'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -153,23 +156,29 @@ export class ControlledFallbackSearchProvider implements SearchProvider {
     return attempts
   }
 
-  async search(query: string, limit: number): Promise<SearchResult[]> {
+  async search(query: string, limit: number, options: { timeoutMs?: number; canFallback?: () => boolean } = {}): Promise<SearchResult[]> {
+    const started = performance.now()
     try {
-      const results = await this.primary.search(query, limit)
-      this.attempts.push({ provider: 'duckduckgo', success: true, resultCount: results.length, fallbackTriggered: false })
+      const results = await this.primary.search(query, limit, options)
+      this.attempts.push({ provider: 'duckduckgo', success: true, resultCount: results.length, fallbackTriggered: false, durationMs: Math.round(performance.now() - started) })
       return results
     } catch (error) {
       // Apenas falhas explicitamente classificadas pelo provider podem consumir
       // uma consulta Brave; bugs inesperados não devem ser mascarados como busca.
       if (!(error instanceof SearchUnavailableError)) throw error
       const failureReason = error.reason
+      if (options.canFallback && !options.canFallback()) {
+        this.attempts.push({ provider: 'duckduckgo', success: false, failureReason, resultCount: 0, fallbackTriggered: false, fallbackSkippedReason: 'TIME_BUDGET_EXHAUSTED', durationMs: Math.round(performance.now() - started) })
+        throw error
+      }
+      const fallbackStarted = performance.now()
       try {
-        const results = await this.fallback.search(query, limit)
+        const results = await this.fallback.search(query, limit, options)
         this.attempts.push({
           provider: 'duckduckgo', success: false, failureReason, resultCount: 0,
-          fallbackTriggered: true, fallbackProvider: 'brave', fallbackResultCount: results.length,
+          fallbackTriggered: true, fallbackProvider: 'brave', fallbackResultCount: results.length, durationMs: Math.round(fallbackStarted - started),
         })
-        this.attempts.push({ provider: 'brave', success: true, resultCount: results.length, fallbackTriggered: true, fallbackProvider: 'brave', fallbackResultCount: results.length })
+        this.attempts.push({ provider: 'brave', success: true, resultCount: results.length, fallbackTriggered: true, fallbackProvider: 'brave', fallbackResultCount: results.length, durationMs: Math.round(performance.now() - fallbackStarted) })
         return results
       } catch (fallbackError) {
         const fallbackReason = fallbackError instanceof SearchUnavailableError ? fallbackError.reason : 'SEARCH_PROVIDER_UNAVAILABLE'

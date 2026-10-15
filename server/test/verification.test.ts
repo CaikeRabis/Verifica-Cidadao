@@ -19,7 +19,7 @@ function pipelineTrace(): PipelineTrace {
   return {
     timingsMs: {}, queries: {}, searchResults: {}, searchCalls: [], searchAttempts: [], selectedSources: [], fetches: [], aiCalls: [],
     evidenceCandidates: [], rejectedEvidences: [], acceptedEvidenceTrace: [], windows: [], acceptedEvidences: 0, discardedEvidences: 0,
-    retries: { extraAiCalls: 0, evidence: [] }, deterministicRecoveries: [], selfReferenceRejections: [], secondaryRecovery: [], secondaryTargetedSearches: 0, additionalSearchRequests: 0, additionalBraveFallbackRequests: 0, secondaryRecoveryLatencyMs: 0,
+    retries: { extraAiCalls: 0, evidence: [] }, deterministicRecoveries: [], selfReferenceRejections: [], secondaryRecovery: [], secondaryTargetedSearches: 0, additionalSearchRequests: 0, additionalBraveFallbackRequests: 0, secondaryRecoveryLatencyMs: 0, budget: { budgetMs: 25000, elapsedMs: 0, remainingMs: 25000, budgetExhausted: false, skippedOperations: [] },
   }
 }
 
@@ -559,7 +559,9 @@ describe('9. Fallback operacional DDG → Brave', () => {
     )
     assert.deepEqual(await provider.search('consulta', 6), [result])
     assert.equal(braveCalls, 0)
-    assert.deepEqual(provider.takeAttempts(), [{ provider: 'duckduckgo', success: true, resultCount: 1, fallbackTriggered: false }])
+    const [attempt] = provider.takeAttempts()
+    assert.deepEqual({ provider: attempt.provider, success: attempt.success, resultCount: attempt.resultCount, fallbackTriggered: attempt.fallbackTriggered }, { provider: 'duckduckgo', success: true, resultCount: 1, fallbackTriggered: false })
+    assert.equal(typeof attempt.durationMs, 'number')
   })
 
   it('aciona Brave somente após falha operacional do DDG e registra o motivo', async () => {

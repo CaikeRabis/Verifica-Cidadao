@@ -8,7 +8,7 @@ import type { SearchProvider } from '../src/services/searchService'
 const trace = (): PipelineTrace => ({
   timingsMs: {}, queries: {}, searchResults: {}, searchCalls: [], searchAttempts: [], selectedSources: [], fetches: [], aiCalls: [],
   evidenceCandidates: [], rejectedEvidences: [], acceptedEvidenceTrace: [], windows: [], acceptedEvidences: 0, discardedEvidences: 0,
-  retries: { extraAiCalls: 0, evidence: [] }, deterministicRecoveries: [], selfReferenceRejections: [], secondaryRecovery: [], secondaryTargetedSearches: 0, additionalSearchRequests: 0, additionalBraveFallbackRequests: 0, secondaryRecoveryLatencyMs: 0,
+  retries: { extraAiCalls: 0, evidence: [] }, deterministicRecoveries: [], selfReferenceRejections: [], secondaryRecovery: [], secondaryTargetedSearches: 0, additionalSearchRequests: 0, additionalBraveFallbackRequests: 0, secondaryRecoveryLatencyMs: 0, budget: { budgetMs: 25000, elapsedMs: 0, remainingMs: 25000, budgetExhausted: false, skippedOperations: [] },
 })
 
 describe('Identidade canônica da URL analisada', () => {

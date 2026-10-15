@@ -52,6 +52,7 @@ export function createApp(config: Config, overrides: { ai?: AiService; search?: 
       ai: overrides.ai ?? new OpenAiCompatibleService(config),
       search: overrides.search ?? createSearchProvider(config),
       fetcher: overrides.fetcher,
+      verificationTimeBudgetMs: config.verificationTimeBudgetMs,
     }),
   )
 

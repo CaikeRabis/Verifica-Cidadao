@@ -30,6 +30,7 @@ import { performance } from 'node:perf_hooks'
 import { selectRelevantWindows } from '../lib/contentWindowing'
 import { recoverDeterministicEvidence, type DeterministicRecoveryTrace } from './deterministicEvidenceRecovery'
 import { canonicalUrlKey, isSameUrlIdentity } from '../lib/urlIdentity'
+import { VerificationBudget, VERIFICATION_TIME_BUDGET_MS } from '../lib/verificationBudget'
 
 export interface PipelineTrace {
   timingsMs: Record<string, number>
@@ -72,6 +73,7 @@ export interface PipelineTrace {
   additionalSearchRequests: number
   additionalBraveFallbackRequests: number
   secondaryRecoveryLatencyMs: number
+  budget: { budgetMs: number; elapsedMs: number; remainingMs: number; budgetExhausted: boolean; skippedOperations: { stage: string; reason: 'TIME_BUDGET_EXHAUSTED' }[] }
 }
 
 function evidenceObserver(trace?: PipelineTrace) {
@@ -90,6 +92,7 @@ export interface VerificationDeps {
   fetcher?: PageFetcher
   now?: () => Date
   maxSources?: number
+  verificationTimeBudgetMs?: number
   /** Diagnóstico interno, usado pela bateria real; não faz parte da resposta da API. */
   trace?: PipelineTrace
 }
@@ -98,6 +101,7 @@ export interface VerificationOptions {
   /** Texto limpo da página analisada; a URL continua sendo a query exposta. */
   claimInput?: string
   analyzedSource?: AnalyzedSource
+  budget?: VerificationBudget
 }
 
 /**
@@ -197,11 +201,17 @@ const LOW = 'Pouca base documental para uma conclusão: o resultado depende de l
 /** Pipeline v0.2: claims → busca → seleção → leitura → evidências → classificação → segurança → resposta. */
 export async function verify(input: string, deps: VerificationDeps, options: VerificationOptions = {}): Promise<VerificationResult> {
   const pipelineStarted = performance.now()
+  const budget = options.budget ?? new VerificationBudget(deps.verificationTimeBudgetMs ?? VERIFICATION_TIME_BUDGET_MS)
+  if (deps.trace) deps.trace.budget.budgetMs = budget.budgetMs
   const now = (deps.now ?? (() => new Date()))()
   const requestId = randomUUID().slice(0, 8)
   const fetcher = deps.fetcher ?? defaultFetcher
   const base = { requestId, input, now, analyzedSource: options.analyzedSource }
   const limitations: string[] = []
+  const skipForBudget = (stage: string) => {
+    deps.trace?.budget.skippedOperations.push({ stage, reason: 'TIME_BUDGET_EXHAUSTED' })
+    if (!limitations.some((item) => item.includes('limite de tempo'))) limitations.push('A verificação atingiu o limite de tempo antes de consultar todas as fontes planejadas.')
+  }
   const analyzedUrls = options.analyzedSource
     ? [options.analyzedSource.originalUrl ?? options.analyzedSource.url, options.analyzedSource.finalUrl]
     : []
@@ -215,8 +225,9 @@ export async function verify(input: string, deps: VerificationDeps, options: Ver
     })
   }
   const search = async (claimId: string, query: string, limit: number) => {
+    if (!budget.canStartOperation(8000)) { skipForBudget('search'); return [] }
     try {
-      const results = await deps.search.search(query, limit)
+      const results = await deps.search.search(query, limit, { timeoutMs: Math.max(1, budget.remainingMs() - 500), canFallback: () => budget.canStartOperation(8000) })
       const attempts = deps.search.takeAttempts?.() ?? [{
         provider: (results[0]?.provider === 'brave' ? 'brave' : 'duckduckgo') as 'brave' | 'duckduckgo',
         success: true,
@@ -224,6 +235,7 @@ export async function verify(input: string, deps: VerificationDeps, options: Ver
         fallbackTriggered: false,
       }]
       deps.trace?.searchAttempts.push(...attempts.map((attempt) => ({ claimId, query, ...attempt })))
+      if (attempts.some((attempt) => attempt.fallbackSkippedReason === 'TIME_BUDGET_EXHAUSTED')) skipForBudget('brave-fallback')
       return results
     } catch (error) {
       const attempts = deps.search.takeAttempts?.() ?? [{
@@ -234,6 +246,7 @@ export async function verify(input: string, deps: VerificationDeps, options: Ver
         fallbackTriggered: false,
       }]
       deps.trace?.searchAttempts.push(...attempts.map((attempt) => ({ claimId, query, ...attempt })))
+      if (attempts.some((attempt) => attempt.fallbackSkippedReason === 'TIME_BUDGET_EXHAUSTED')) skipForBudget('brave-fallback')
       throw error
     }
   }
@@ -294,6 +307,13 @@ export async function verify(input: string, deps: VerificationDeps, options: Ver
 
   const allSearchesFailed = perClaimSearches.every((p) => p.results.length === 0)
   if (allSearchesFailed) {
+    if (deps.trace?.budget.skippedOperations.length) {
+      const out = classify({ claims, evidences: [], noSourcesRead: true })
+      deps.trace.budget.elapsedMs = budget.elapsedMs()
+      deps.trace.budget.remainingMs = budget.remainingMs()
+      deps.trace.budget.budgetExhausted = true
+      return buildResult({ ...base, claims: withStatus(claims, out.claimStatus, []), sources: [], ...out, limitations })
+    }
     throw new SearchUnavailableError('busca indisponível')
   }
 
@@ -424,8 +444,9 @@ export async function verify(input: string, deps: VerificationDeps, options: Ver
         deps.trace?.secondaryRecovery.push(entry)
       }
       const uncoveredSecondary = claims.filter((claim) =>
-        claim.role === 'secondary' && claim.material !== false && !validEv.some((evidence) => evidence.claimId === claim.id),
+        claim.role === 'secondary' && claim.material !== false && !validEv.some((evidence) => evidence.claimId === claim.id) && budget.canStartOperation(8000),
       )
+      for (const claim of claims.filter((item) => item.role === 'secondary' && item.material !== false && !validEv.some((evidence) => evidence.claimId === item.id) && !budget.canStartOperation(8000))) skipForBudget(`secondary-recovery:${claim.id}`)
       for (const claim of uncoveredSecondary) {
         const recoveryStarted = performance.now()
         const targetedQuery = `${extractKeywords(claim.text).slice(0, 7).join(' ')} dados oficiais`.trim().slice(0, 150)
@@ -602,6 +623,11 @@ export async function verify(input: string, deps: VerificationDeps, options: Ver
     limitations,
   })
   deps.trace && (deps.trace.timingsMs.totalPipeline = Math.round(performance.now() - pipelineStarted))
+  if (deps.trace) {
+    deps.trace.budget.elapsedMs = budget.elapsedMs()
+    deps.trace.budget.remainingMs = budget.remainingMs()
+    deps.trace.budget.budgetExhausted = budget.exhausted() || deps.trace.budget.skippedOperations.length > 0
+  }
   return result
 }
 

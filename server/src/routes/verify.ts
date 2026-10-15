@@ -4,6 +4,7 @@ import { validatePublicUrl, UnsafeUrlError, FetchFailedError } from '../lib/safe
 import { validateVerificationInput } from '../lib/input'
 import { verify, type VerificationDeps } from '../services/verificationService'
 import { readAnalyzedPage } from '../services/sourceReader'
+import { VerificationBudget } from '../lib/verificationBudget'
 
 /** Converte erros internos em respostas amigáveis (sem stack trace). */
 export function toApiError(e: unknown): ApiError {
@@ -34,6 +35,7 @@ export function verifyRouter(deps: VerificationDeps): Router {
       const request = validateVerificationInput(req.body)
       let result
       if (request.inputType === 'url') {
+        const budget = new VerificationBudget(deps.verificationTimeBudgetMs)
         validatePublicUrl(request.input)
         let analyzed
         try {
@@ -47,6 +49,7 @@ export function verifyRouter(deps: VerificationDeps): Router {
         }
         result = await verify(request.input, deps, {
           claimInput: analyzed.text,
+          budget,
           analyzedSource: {
             url: analyzed.url,
             originalUrl: request.input,
