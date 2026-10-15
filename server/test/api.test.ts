@@ -77,7 +77,7 @@ describe('Integração HTTP end-to-end do servidor', () => {
     const res = await fetch(`${baseUrl}/api/health`)
     assert.equal(res.status, 200)
     const data = await res.json()
-    assert.deepEqual(data, { status: 'ok', pipelineVersion: '0.2.2' })
+    assert.deepEqual(data, { status: 'ok', pipelineVersion: '0.3.0' })
   })
 
   it('POST /api/verify responde 400 com erro amigável se body for vazio', async () => {
@@ -101,7 +101,7 @@ describe('Integração HTTP end-to-end do servidor', () => {
     const data = (await res.json()) as any
     assert.ok(data.id)
     assert.ok(data.requestId)
-    assert.equal(data.pipelineVersion, '0.2.2')
+    assert.equal(data.pipelineVersion, '0.3.0')
     assert.ok(['confirmada', 'parcialmente-confirmada', 'sem-evidencias', 'contradita', 'analise-humana'].includes(data.classification))
     assert.ok(Array.isArray(data.claims))
     assert.ok(data.claims.length > 0)
