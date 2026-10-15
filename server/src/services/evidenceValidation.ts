@@ -58,11 +58,48 @@ export type EvidenceRejectionReason =
 
 export interface EvidenceValidationObserver {
   candidate: (item: { claimId: string; sourceId: string; windowId?: string; quote: string; context: string; stanceFromAI: RawEvidence['stance']; structuredEntities: ReturnType<typeof extractFactualEntities> }) => void
-  rejected: (item: { claimId: string; sourceId: string; quote: string; reason: EvidenceRejectionReason; relevanceChecks?: Record<string, boolean | number> }) => void
-  accepted: (item: ValidEvidence & { stanceFromAI: RawEvidence['stance']; relevanceChecks: Record<string, boolean | number> }) => void
+  rejected: (item: { claimId: string; sourceId: string; quote: string; reason: EvidenceRejectionReason; relevanceChecks?: Record<string, boolean | number | string> }) => void
+  accepted: (item: ValidEvidence & { stanceFromAI: RawEvidence['stance']; relevanceChecks: Record<string, boolean | number | string> }) => void
 }
 
-const HISTORICAL_CONTEXT = /\b(inicial|hist[oó]ric[oa]|antig[oa]|[àa]\s+época|originalmente)\b/i
+type TemporalMode = 'current' | 'historical' | 'explicit-period' | 'unspecified'
+
+const CURRENT_CONTEXT = /\b(atualmente|hoje|em vigor|possui|tem|conta com|[ée]\s+composto\s+por)\b/i
+const HISTORICAL_CONTEXT = /\b(no\s+in[ií]cio(?:\s+da|\s+do)?|inicial|hist[oó]ric[oa]|antig[oa]|[àa]\s+época|naquele\s+(?:per[ií]odo|ano)|anteriormente|originalmente|at[eé]\s+(?:1[5-9]|20)\d{2}|durante\s+(?:o|a))\b/i
+const YEAR = /\b(?:1[5-9]|20)\d{2}\b/g
+
+const yearsIn = (text: string) => [...text.matchAll(YEAR)].map((match) => Number(match[0]))
+
+/**
+ * Distingue o tempo do fato narrado da data de publicação da página. Uma
+ * passagem pode ser atual e mencionar sua origem histórica; nesse caso o
+ * predicado atual torna a passagem aplicável à alegação presente.
+ */
+export function temporalApplicability(claim: Claim, quote: string, sourceText = '') {
+  const claimYears = yearsIn(claim.text)
+  const quoteYears = yearsIn(quote)
+  const sourceYears = yearsIn(sourceText)
+  const claimMode: TemporalMode = claimYears.length > 0 || claim.context?.temporal?.year
+    ? 'explicit-period'
+    : CURRENT_CONTEXT.test(claim.text) ? 'current' : 'unspecified'
+  const evidenceMode: TemporalMode = CURRENT_CONTEXT.test(quote)
+    ? 'current'
+    : (HISTORICAL_CONTEXT.test(quote) || quoteYears.length > 0) ? 'historical' : 'unspecified'
+  const claimedYear = claim.context?.temporal?.year ?? claimYears[0]
+  const evidenceYears = quoteYears.length > 0 ? quoteYears : sourceYears
+  const currentVsHistorical = claimMode === 'current' && evidenceMode === 'historical'
+  // Quando o ano é o próprio fato comparado ("promulgada em 1989"), 1988
+  // deve contradizer 1989. O bloqueio vale para períodos que qualificam outro
+  // valor factual, como moeda, percentual ou contagem.
+  const periodQualifiesAnotherValue = extractFactualEntities(claim.text).some((entity) => ['money', 'percentage', 'number'].includes(entity.kind))
+  const explicitYearMismatch = claimMode === 'explicit-period' && periodQualifiesAnotherValue && !!claimedYear && evidenceYears.length > 0 && !evidenceYears.includes(claimedYear)
+  // Contexto herdado da primary representa um período explícito do conteúdo
+  // URL; a página inteira pode trazer ano de outro fato quando o quote não o
+  // repete, portanto preservamos a proteção já existente.
+  const inheritedYearMismatch = claim.context?.temporal?.source === 'inherited-primary' && !!claimedYear && sourceYears.some((year) => year !== claimedYear) && !sourceYears.includes(claimedYear)
+  const applicable = !(currentVsHistorical || explicitYearMismatch || inheritedYearMismatch)
+  return { claimMode, evidenceMode, applicable, claimedYear, evidenceYears, currentVsHistorical, explicitYearMismatch, inheritedYearMismatch }
+}
 const ALIASES: [RegExp, string][] = [
   [/\bsupremo tribunal federal\b/gi, 'stf'], [/\bsenado federal\b/gi, 'senado'],
   [/\bc[aâ]mara dos deputados\b/gi, 'camara'], [/\bsistema [úu]nico de sa[úu]de\b/gi, 'sus'],
@@ -71,7 +108,7 @@ const ALIASES: [RegExp, string][] = [
 const canonical = (text: string) => ALIASES.reduce((value, [pattern, replacement]) => value.replace(pattern, replacement), text)
 
 /** Relevância mínima: a fonte pode ser confiável, mas ainda não responder à claim. */
-function relevance(claim: Claim, quote: string, stance: RawEvidence['stance'], factual: ReturnType<typeof compareFactualClaim>, sourceText = '') {
+function relevance(claim: Claim, quote: string, factual: ReturnType<typeof compareFactualClaim>, sourceText = '', temporal = temporalApplicability(claim, quote, sourceText)) {
   const normalizedClaim = canonical(claim.text)
   const normalizedQuote = canonical(quote)
   const claimWords = extractKeywords(normalizedClaim).filter((word) => word.length >= 3 && !/^\d/.test(word))
@@ -82,19 +119,13 @@ function relevance(claim: Claim, quote: string, stance: RawEvidence['stance'], f
   const entityMatch = claimWords.some((word) => ['stf', 'senado', 'camara', 'sus', 'df'].includes(word) && quoteWords.has(word))
   const objectMatch = claimWords.filter((word) => !['stf', 'senado', 'camara', 'sus', 'df'].includes(word)).some((word) => quoteWords.has(word))
   const valueMatch = !!(factual ?? componentFactual)
-  const claimedYear = claim.context?.temporal?.year
-  const sourceYears = [...sourceText.matchAll(/\b(?:19|20)\d{2}\b/g)].map((match) => Number(match[0]))
-  const contextualYearConflict = stance === 'contradicts' && claim.context?.temporal?.source === 'inherited-primary' && !!claimedYear && sourceYears.some((year) => year !== claimedYear) && !sourceYears.includes(claimedYear)
-  const historicalConflict = (stance === 'supports' && HISTORICAL_CONTEXT.test(quote) && !HISTORICAL_CONTEXT.test(claim.text)) || contextualYearConflict
-  const checks = { lexicalOverlap: overlap >= 2, lexicalOverlapCount: overlap, entityMatch, aliasMatch: entityMatch, objectMatch, valueMatch, temporalMatch: !historicalConflict, lexicalMatch: overlap >= 2, numericRequired, historicalConflict }
+  const checks = { lexicalOverlap: overlap >= 2, lexicalOverlapCount: overlap, entityMatch, aliasMatch: entityMatch, objectMatch, valueMatch, temporalMatch: temporal.applicable, lexicalMatch: overlap >= 2, numericRequired, historicalConflict: !temporal.applicable, claimTemporalMode: temporal.claimMode, evidenceTemporalMode: temporal.evidenceMode, temporalApplicable: temporal.applicable }
+  if (!temporal.applicable) return { ok: false, reason: 'HISTORICAL_CONTEXT_MISMATCH' as const, checks }
   if (overlap < 2 && !(entityMatch && objectMatch && valueMatch)) return { ok: false, reason: 'LOW_LEXICAL_RELEVANCE' as const, checks }
 
   // Claims quantitativas exigem comparação objetiva; texto com número em outro
   // contexto (ou número por extenso) não pode virar suporte por decisão da IA.
   if (numericRequired && !(factual ?? componentFactual)) return { ok: false, reason: 'ENTITY_MISMATCH' as const, checks }
-  // Uma composição histórica não comprova a composição atual quando a claim não
-  // traz esse recorte temporal.
-  if (historicalConflict) return { ok: false, reason: 'HISTORICAL_CONTEXT_MISMATCH' as const, checks }
   return { ok: true, checks }
 }
 
@@ -120,7 +151,10 @@ export function validateEvidences(raw: RawEvidence[], claims: Claim[], sources: 
     if (source.readStatus !== 'read' || !source.text) { discarded++; observer?.rejected({ ...e, reason: 'SOURCE_NOT_READ' }); continue }
     if (!quoteExistsIn(e.quote, source.text)) { discarded++; observer?.rejected({ ...e, reason: 'QUOTE_NOT_IN_SOURCE' }); continue }
     const claim = claims.find((c) => c.id === e.claimId)!
-    const factual = compareFactualClaim(canonical(claim.text), canonical(e.quote))
+    const temporal = temporalApplicability(claim, e.quote, source.text)
+    // Aplicabilidade temporal vem antes da comparação numérica: um valor
+    // verdadeiro em período histórico não decide uma alegação atual.
+    const factual = temporal.applicable ? compareFactualClaim(canonical(claim.text), canonical(e.quote)) : undefined
     // Um número incompatível em tema correlato não contradiz, por si só, uma
     // alegação institucional subespecificada. Se a IA marcou o trecho como
     // insuficiente e não há entidade institucional compartilhada, preserva-se
@@ -129,7 +163,7 @@ export function validateEvidences(raw: RawEvidence[], claims: Claim[], sources: 
     const stance = factual?.stance === 'contradicts' && e.stance === 'insufficient' && lacksInstitutionalEntity
       ? 'insufficient'
       : factual?.stance ?? e.stance
-    const relevanceResult = relevance(claim, e.quote, stance, factual, source.text)
+    const relevanceResult = relevance(claim, e.quote, factual, source.text, temporal)
     if (!relevanceResult.ok) {
       discarded++
       observer?.rejected({ ...e, reason: relevanceResult.reason!, relevanceChecks: relevanceResult.checks })

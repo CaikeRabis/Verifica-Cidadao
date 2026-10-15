@@ -42,8 +42,8 @@ export interface PipelineTrace {
   fetches: { sourceId: string; url: string; domain: string; durationMs: number; readStatus: string; bytes?: number; failureReason?: string }[]
   aiCalls: { purpose: 'claim-extraction' | 'evidence-extraction' | 'targeted-evidence-extraction' | 'second-round-evidence-extraction'; durationMs: number; aiAttempt: 1 | 2; retryTriggered: boolean; retryReason?: 'ZERO_VALID_CLAIMS' | 'PRIMARY_WITHOUT_VALID_EVIDENCE' }[]
   evidenceCandidates: { evidenceCandidateId: string; claimId: string; sourceId: string; windowId?: string; quote: string; context: string; stanceFromAI: Stance; structuredEntities: unknown[] }[]
-  rejectedEvidences: { claimId: string; sourceId: string; quote: string; reason: EvidenceRejectionReason; relevanceChecks?: Record<string, boolean | number> }[]
-  acceptedEvidenceTrace: { claimId: string; sourceId: string; quote: string; stanceFromAI: Stance; stanceFinal: Stance; stanceSource?: string; evidenceSource?: string; relevanceChecks: Record<string, boolean | number> }[]
+  rejectedEvidences: { claimId: string; sourceId: string; quote: string; reason: EvidenceRejectionReason; relevanceChecks?: Record<string, boolean | number | string> }[]
+  acceptedEvidenceTrace: { claimId: string; sourceId: string; quote: string; stanceFromAI: Stance; stanceFinal: Stance; stanceSource?: string; evidenceSource?: string; relevanceChecks: Record<string, boolean | number | string> }[]
   windows: { sourceId: string; windowId: string; startOffset: number; endOffset: number; score: number; matchedTerms: string[]; structuredMatches: string[]; text: string }[]
   acceptedEvidences: number
   discardedEvidences: number
