@@ -1,11 +1,11 @@
 {
   "version": "0.3.0",
   "cases": [
-    { "id": "url001", "url": "https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2023/decreto/d11864.htm", "expectedBehavior": "success", "expectedClassification": "confirmada", "notes": "Decreto institucional sobre o valor do salário mínimo." },
-    { "id": "url002", "url": "https://www.planalto.gov.br/ccivil_03/constituicao/constituicao.htm", "expectedBehavior": "success", "expectedClassification": "confirmada", "notes": "Texto constitucional institucional e estável." },
+    { "id": "url001", "url": "https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2023/decreto/d11864.htm", "expectedBehavior": "success", "expectedClassification": "parcialmente-confirmada", "notes": "Primary confirmada externamente; valores diário e horário permanecem sem cobertura externa suficiente." },
+    { "id": "url002", "url": "https://www.planalto.gov.br/ccivil_03/constituicao/constituicao.htm", "expectedBehavior": "success", "expectedClassification": "parcialmente-confirmada", "notes": "Primary e uma secondary confirmadas externamente; EC 132 permanece sem cobertura externa suficiente nesta infraestrutura." },
     { "id": "url003", "url": "https://portal.stf.jus.br/ostf/", "expectedBehavior": "success", "expectedClassification": "parcialmente-confirmada", "notes": "Página institucional sobre o STF, com múltiplas claims." },
-    { "id": "url004", "url": "https://www.gov.br/planalto/pt-br/conheca-a-presidencia/biblioteca-da-pr/constituicao-federal", "expectedBehavior": "success", "expectedClassification": "sem-evidencias", "notes": "Página histórica cuja verificação externa pode ficar limitada." },
-    { "id": "url005", "url": "https://www2.camara.leg.br/atividade-legislativa/legislacao/Constituicoes_Brasileiras/constituicao-cidada/constituicao-federal", "expectedBehavior": "success", "expectedClassification": "sem-evidencias", "notes": "Página institucional com informações históricas verificáveis." },
+    { "id": "url004", "url": "https://www.gov.br/planalto/pt-br/conheca-a-presidencia/biblioteca-da-pr/constituicao-federal", "expectedBehavior": "success", "expectedClassification": "parcialmente-confirmada", "notes": "Primary possui confirmação externa independente; secondaries materiais podem permanecer descobertas." },
+    { "id": "url005", "url": "https://www2.camara.leg.br/atividade-legislativa/legislacao/Constituicoes_Brasileiras/constituicao-cidada/constituicao-federal", "expectedBehavior": "success", "expectedClassification": "sem-evidencias", "notes": "A cobertura externa da primary não é estável sob o budget atual; mantém-se classificação conservadora até haver evidência independente válida." },
     { "id": "url006", "url": "https://www.gov.br/planalto/pt-br/assuntos/nao-existe.pdf", "expectedBehavior": "unsupported-or-unreadable", "notes": "Documento PDF é deliberadamente não suportado no modo Link." }
   ]
 }
