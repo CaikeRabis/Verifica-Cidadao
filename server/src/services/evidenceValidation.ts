@@ -54,7 +54,7 @@ export type EvidenceRejectionReason =
   | 'INVALID_STRUCTURE' | 'CLAIM_MISMATCH' | 'INVALID_SOURCE' | 'SOURCE_NOT_READ'
   | 'QUOTE_NOT_FOUND' | 'LOW_LEXICAL_RELEVANCE' | 'ENTITY_MISMATCH'
   | 'QUOTE_NOT_IN_WINDOW' | 'QUOTE_NOT_IN_SOURCE' | 'INVALID_WINDOW_ID'
-  | 'HISTORICAL_CONTEXT_MISMATCH' | 'DUPLICATE' | 'OTHER'
+  | 'HISTORICAL_CONTEXT_MISMATCH' | 'DUPLICATE' | 'ANALYZED_SOURCE_SELF_REFERENCE' | 'OTHER'
 
 export interface EvidenceValidationObserver {
   candidate: (item: { claimId: string; sourceId: string; windowId?: string; quote: string; context: string; stanceFromAI: RawEvidence['stance']; structuredEntities: ReturnType<typeof extractFactualEntities> }) => void

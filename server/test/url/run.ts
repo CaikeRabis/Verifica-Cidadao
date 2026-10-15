@@ -6,11 +6,12 @@ import { OpenAiCompatibleService } from '../../src/services/aiService'
 import { createSearchProvider } from '../../src/services/searchService'
 import { readAnalyzedPage } from '../../src/services/sourceReader'
 import { verify, type PipelineTrace } from '../../src/services/verificationService'
+import { canonicalUrlKey, isSameUrlIdentity } from '../../src/lib/urlIdentity'
 import type { Classification } from '../../src/types'
 
 interface UrlCase { id: string; url: string; expectedBehavior: 'success' | 'unsupported-or-unreadable'; expectedClassification?: Classification; notes: string }
 const root = resolve(import.meta.dirname, '..', '..')
-const newTrace = (): PipelineTrace => ({ timingsMs: {}, queries: {}, searchResults: {}, searchCalls: [], searchAttempts: [], selectedSources: [], fetches: [], aiCalls: [], evidenceCandidates: [], rejectedEvidences: [], acceptedEvidenceTrace: [], windows: [], acceptedEvidences: 0, discardedEvidences: 0, retries: { extraAiCalls: 0, evidence: [] }, deterministicRecoveries: [] })
+const newTrace = (): PipelineTrace => ({ timingsMs: {}, queries: {}, searchResults: {}, searchCalls: [], searchAttempts: [], selectedSources: [], fetches: [], aiCalls: [], evidenceCandidates: [], rejectedEvidences: [], acceptedEvidenceTrace: [], windows: [], acceptedEvidences: 0, discardedEvidences: 0, retries: { extraAiCalls: 0, evidence: [] }, deterministicRecoveries: [], selfReferenceRejections: [] })
 
 async function main() {
   process.loadEnvFile(resolve(root, '.env'))
@@ -22,11 +23,12 @@ async function main() {
     const started = performance.now(); const trace = newTrace()
     try {
       const fetchStarted = performance.now(); const page = await readAnalyzedPage(item.url); const initialUrlFetch = Math.round(performance.now() - fetchStarted)
-      const result = await verify(item.url, { ...deps, trace }, { claimInput: page.text, analyzedSource: { url: page.url, finalUrl: page.finalUrl, domain: page.domain, title: page.title, publishedDate: page.publishedDate } })
-      const selfReferenced = result.sources.some((source) => source.url === page.finalUrl) || result.evidences.some((evidence) => evidence.sourceUrl === page.finalUrl)
+      const result = await verify(item.url, { ...deps, trace }, { claimInput: page.text, analyzedSource: { url: page.url, originalUrl: item.url, finalUrl: page.finalUrl, domain: page.domain, title: page.title, publishedDate: page.publishedDate } })
+      const analyzedUrls = [item.url, page.url, page.finalUrl]
+      const selfReferenced = result.sources.some((source) => isSameUrlIdentity(source.url, analyzedUrls)) || result.evidences.some((evidence) => isSameUrlIdentity(evidence.sourceUrl, analyzedUrls))
       const searchAttempts = trace.searchAttempts
       const braveFallbackRequests = searchAttempts.filter((attempt) => attempt.provider === 'brave').length
-      results.push({ id: item.id, url: item.url, expectedBehavior: item.expectedBehavior, expectedClassification: item.expectedClassification, finalUrl: page.finalUrl, title: page.title, domain: page.domain, initialUrlFetch, claims: result.claims.map((claim) => ({ text: claim.text, role: claim.role, status: claim.status })), searches: trace.searchCalls.length, searchAttempts, braveFallbackRequests, verificationSources: result.sources.map((source) => source.url), evidences: result.evidences.map((evidence) => ({ sourceUrl: evidence.sourceUrl, stance: evidence.stance })), classification: result.classification, selfReferenced, passed: !selfReferenced && result.classification === item.expectedClassification, latencyMs: Math.round(performance.now() - started), timings: trace.timingsMs })
+      results.push({ id: item.id, url: item.url, expectedBehavior: item.expectedBehavior, expectedClassification: item.expectedClassification, analyzedSource: { originalUrl: item.url, fetchedUrl: page.url, finalUrl: page.finalUrl, originalKey: canonicalUrlKey(item.url), finalKey: canonicalUrlKey(page.finalUrl) }, title: page.title, domain: page.domain, initialUrlFetch, claims: result.claims.map((claim) => ({ text: claim.text, role: claim.role, status: claim.status })), searches: trace.searchCalls.length, searchAttempts, braveFallbackRequests, verificationSources: result.sources.map((source) => source.url), evidences: result.evidences.map((evidence) => ({ sourceUrl: evidence.sourceUrl, stance: evidence.stance })), selfReferenceRejections: trace.selfReferenceRejections, classification: result.classification, selfReferenced, passed: !selfReferenced && result.classification === item.expectedClassification, latencyMs: Math.round(performance.now() - started), timings: trace.timingsMs })
     } catch (error) {
       results.push({ id: item.id, url: item.url, expectedBehavior: item.expectedBehavior, error: error instanceof Error ? error.message : 'erro desconhecido', searchAttempts: trace.searchAttempts, braveFallbackRequests: trace.searchAttempts.filter((attempt) => attempt.provider === 'brave').length, passed: item.expectedBehavior === 'unsupported-or-unreadable', latencyMs: Math.round(performance.now() - started) })
     }

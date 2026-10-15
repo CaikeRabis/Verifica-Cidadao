@@ -11,6 +11,7 @@ import type {
   Classification,
   ConfidenceLevel,
   SearchResult,
+  RawEvidence,
   SourceDoc,
   SourceTier,
   Stance,
@@ -28,6 +29,7 @@ import { composeNarrative } from '../lib/resultNarrative'
 import { performance } from 'node:perf_hooks'
 import { selectRelevantWindows } from '../lib/contentWindowing'
 import { recoverDeterministicEvidence, type DeterministicRecoveryTrace } from './deterministicEvidenceRecovery'
+import { canonicalUrlKey, isSameUrlIdentity } from '../lib/urlIdentity'
 
 export interface PipelineTrace {
   timingsMs: Record<string, number>
@@ -50,6 +52,7 @@ export interface PipelineTrace {
     evidence: { claimId: string; aiAttempt: 1 | 2; retryTriggered: boolean; retryReason?: 'PRIMARY_WITHOUT_VALID_EVIDENCE'; reusedSources: string[]; reusedWindowIds: string[]; candidatesAttempt1: number; candidatesAttempt2?: number; acceptedAttempt1: number; acceptedAttempt2?: number }[]
   }
   deterministicRecoveries: DeterministicRecoveryTrace[]
+  selfReferenceRejections: { stage: 'search' | 'source' | 'evidence'; candidateUrl: string; normalizedCandidateKey: string; analyzedOriginalKey: string; analyzedFinalKey: string; rejected: true; reason: 'ANALYZED_SOURCE_SELF_REFERENCE' }[]
 }
 
 function evidenceObserver(trace?: PipelineTrace) {
@@ -180,6 +183,18 @@ export async function verify(input: string, deps: VerificationDeps, options: Ver
   const fetcher = deps.fetcher ?? defaultFetcher
   const base = { requestId, input, now, analyzedSource: options.analyzedSource }
   const limitations: string[] = []
+  const analyzedUrls = options.analyzedSource
+    ? [options.analyzedSource.originalUrl ?? options.analyzedSource.url, options.analyzedSource.finalUrl]
+    : []
+  const analyzedOriginalKey = analyzedUrls[0] ? canonicalUrlKey(analyzedUrls[0]) : ''
+  const analyzedFinalKey = analyzedUrls[1] ? canonicalUrlKey(analyzedUrls[1]) : ''
+  const isSelfReference = (url: string) => analyzedUrls.length > 0 && isSameUrlIdentity(url, analyzedUrls)
+  const recordSelfReference = (stage: 'search' | 'source' | 'evidence', candidateUrl: string) => {
+    deps.trace?.selfReferenceRejections.push({
+      stage, candidateUrl, normalizedCandidateKey: canonicalUrlKey(candidateUrl), analyzedOriginalKey, analyzedFinalKey,
+      rejected: true, reason: 'ANALYZED_SOURCE_SELF_REFERENCE',
+    })
+  }
   const search = async (claimId: string, query: string, limit: number) => {
     try {
       const results = await deps.search.search(query, limit)
@@ -243,7 +258,7 @@ export async function verify(input: string, deps: VerificationDeps, options: Ver
         deps.trace?.searchCalls.push({ claimId: c.id, query: q, durationMs: Math.round(performance.now() - queryStarted), resultCount: results.length, providers: [...new Set(results.map((item) => item.provider ?? 'unknown'))] })
         for (const item of results) {
           // Conteúdo analisado nunca é fonte confirmatória de si mesmo.
-          if (options.analyzedSource && sameUrl(item.url, options.analyzedSource.finalUrl)) continue
+          if (isSelfReference(item.url)) { recordSelfReference('search', item.url); continue }
           if (!seenUrls.has(item.url)) {
             seenUrls.add(item.url)
             merged.push(item)
@@ -273,7 +288,10 @@ export async function verify(input: string, deps: VerificationDeps, options: Ver
 
   // 4. Leitura real das páginas
   const readingStarted = performance.now()
-  const sources = await readSources(selected, fetcher, () => now, 0, (event) => deps.trace?.fetches.push(event))
+  const fetchedSources = await readSources(selected, fetcher, () => now, 0, (event) => deps.trace?.fetches.push(event))
+  const selfSourceIds = new Set(fetchedSources.filter((source) => isSelfReference(source.url)).map((source) => source.id))
+  for (const source of fetchedSources.filter((item) => selfSourceIds.has(item.id))) recordSelfReference('source', source.url)
+  const sources = fetchedSources.filter((source) => !selfSourceIds.has(source.id))
   deps.trace && (deps.trace.timingsMs.readSources = Math.round(performance.now() - readingStarted))
   const read = sources.filter((s) => s.readStatus === 'read')
   if (deps.trace) deps.trace.windows.push(...read.flatMap((source) => selectRelevantWindows(source.id, source.text ?? '', claims, 6000).map((window) => ({ sourceId: source.id, ...window }))))
@@ -299,7 +317,17 @@ export async function verify(input: string, deps: VerificationDeps, options: Ver
     const extractionStarted = performance.now()
     const raw = await deps.ai.extractEvidence(claims, read)
     deps.trace?.aiCalls.push({ purpose: 'evidence-extraction', durationMs: Math.round(performance.now() - extractionStarted), aiAttempt: 1, retryTriggered: false })
-    const v = validateEvidences(raw, claims, sources, evidenceObserver(deps.trace))
+    const validate = (evidence: RawEvidence[], scopedClaims: Claim[]) => {
+      const external = evidence.filter((item) => {
+        const source = fetchedSources.find((candidate) => candidate.id === item.sourceId)
+        if (!source || !selfSourceIds.has(source.id)) return true
+        recordSelfReference('evidence', source.url)
+        deps.trace?.rejectedEvidences.push({ claimId: item.claimId, sourceId: item.sourceId, quote: item.quote, reason: 'ANALYZED_SOURCE_SELF_REFERENCE' })
+        return false
+      })
+      return validateEvidences(external, scopedClaims, sources, evidenceObserver(deps.trace))
+    }
+    const v = validate(raw, claims)
     validEv = v.valid
     discarded = v.discarded
 
@@ -315,7 +343,7 @@ export async function verify(input: string, deps: VerificationDeps, options: Ver
       const focusedStarted = performance.now()
       const focusedRaw = await deps.ai.extractEvidence(retryablePrimary, read, { retry: true })
       deps.trace?.aiCalls.push({ purpose: 'targeted-evidence-extraction', durationMs: Math.round(performance.now() - focusedStarted), aiAttempt: 2, retryTriggered: true, retryReason: 'PRIMARY_WITHOUT_VALID_EVIDENCE' })
-      const focused = validateEvidences(focusedRaw, retryablePrimary, sources, evidenceObserver(deps.trace))
+      const focused = validate(focusedRaw, retryablePrimary)
       discarded += focused.discarded
       validEv = [...validEv, ...focused.valid].map((evidence, index) => ({ ...evidence, id: `e${index + 1}` }))
       if (deps.trace) {
@@ -346,7 +374,7 @@ export async function verify(input: string, deps: VerificationDeps, options: Ver
       const recovered = recoverDeterministicEvidence(claim, read)
       deps.trace?.deterministicRecoveries.push(recovered.trace)
       if (!recovered.evidence) continue
-      const recoveredValidation = validateEvidences([recovered.evidence], [claim], sources, evidenceObserver(deps.trace))
+      const recoveredValidation = validate([recovered.evidence], [claim])
       discarded += recoveredValidation.discarded
       if (recoveredValidation.valid.length > 0) {
         validEv = [...validEv, ...recoveredValidation.valid].map((evidence, index) => ({ ...evidence, id: `e${index + 1}` }))
@@ -362,7 +390,7 @@ export async function verify(input: string, deps: VerificationDeps, options: Ver
         try {
           const res = await search(c.id, `${kw} dados oficiais`, 6)
           for (const item of res) {
-            if (options.analyzedSource && sameUrl(item.url, options.analyzedSource.finalUrl)) continue
+            if (isSelfReference(item.url)) { recordSelfReference('search', item.url); continue }
             if (!readUrls.has(item.url) && !retryMerged.some((m) => m.url === item.url)) {
               retryMerged.push(item)
             }
@@ -374,15 +402,27 @@ export async function verify(input: string, deps: VerificationDeps, options: Ver
         if (deps.trace) deps.trace.selectedSources.push(...round2Candidates.map((s) => ({ title: s.title, url: s.url, domain: s.domain, tier: s.tier })))
         if (round2Candidates.length > 0) {
           const round2Sources = await readSources(round2Candidates, fetcher, () => now, sources.length, (event) => deps.trace?.fetches.push(event))
-          const round2Read = round2Sources.filter((s) => s.readStatus === 'read')
+          const externalRound2Sources = round2Sources.filter((source) => {
+            if (!isSelfReference(source.url)) return true
+            recordSelfReference('source', source.url)
+            return false
+          })
+          const round2Read = externalRound2Sources.filter((s) => s.readStatus === 'read')
           if (round2Read.length > 0) {
             const round2Started = performance.now()
             const raw2 = await deps.ai.extractEvidence(claims, round2Read)
             deps.trace?.aiCalls.push({ purpose: 'second-round-evidence-extraction', durationMs: Math.round(performance.now() - round2Started), aiAttempt: 1, retryTriggered: false })
-            const v2 = validateEvidences(raw2, claims, [...sources, ...round2Sources], evidenceObserver(deps.trace))
+            const externalRaw2 = raw2.filter((item) => {
+              const source = round2Sources.find((candidate) => candidate.id === item.sourceId)
+              if (!source || !isSelfReference(source.url)) return true
+              recordSelfReference('evidence', source.url)
+              deps.trace?.rejectedEvidences.push({ claimId: item.claimId, sourceId: item.sourceId, quote: item.quote, reason: 'ANALYZED_SOURCE_SELF_REFERENCE' })
+              return false
+            })
+            const v2 = validateEvidences(externalRaw2, claims, [...sources, ...externalRound2Sources], evidenceObserver(deps.trace))
             if (v2.valid.length > 0) {
               validEv = v2.valid
-              sources.push(...round2Sources)
+              sources.push(...externalRound2Sources)
               limitations.push('Foi necessária uma segunda rodada de busca com termos complementares para localizar evidências suficientes.')
             }
           }
@@ -454,16 +494,6 @@ export async function verify(input: string, deps: VerificationDeps, options: Ver
   })
   deps.trace && (deps.trace.timingsMs.totalPipeline = Math.round(performance.now() - pipelineStarted))
   return result
-}
-
-function sameUrl(a: string, b: string): boolean {
-  try {
-    const left = new URL(a); left.hash = ''
-    const right = new URL(b); right.hash = ''
-    return left.toString() === right.toString()
-  } catch {
-    return a === b
-  }
 }
 
 function withStatus(claims: Claim[], status: Record<string, Classification>, evidences: ApiEvidence[]): Claim[] {

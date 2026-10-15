@@ -105,7 +105,9 @@ export interface ApiEvidence {
 
 /** Página enviada pelo cidadão: é conteúdo analisado, nunca evidência de si mesma. */
 export interface AnalyzedSource {
+  /** URL original enviada pelo cidadão; `url` é preservada por compatibilidade. */
   url: string
+  originalUrl?: string
   finalUrl: string
   domain: string
   title?: string

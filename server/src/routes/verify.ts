@@ -49,6 +49,7 @@ export function verifyRouter(deps: VerificationDeps): Router {
           claimInput: analyzed.text,
           analyzedSource: {
             url: analyzed.url,
+            originalUrl: request.input,
             finalUrl: analyzed.finalUrl,
             domain: analyzed.domain,
             title: analyzed.title,

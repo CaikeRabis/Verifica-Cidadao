@@ -19,7 +19,7 @@ function pipelineTrace(): PipelineTrace {
   return {
     timingsMs: {}, queries: {}, searchResults: {}, searchCalls: [], searchAttempts: [], selectedSources: [], fetches: [], aiCalls: [],
     evidenceCandidates: [], rejectedEvidences: [], acceptedEvidenceTrace: [], windows: [], acceptedEvidences: 0, discardedEvidences: 0,
-    retries: { extraAiCalls: 0, evidence: [] }, deterministicRecoveries: [],
+    retries: { extraAiCalls: 0, evidence: [] }, deterministicRecoveries: [], selfReferenceRejections: [],
   }
 }
 

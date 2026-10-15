@@ -122,6 +122,7 @@ describe('Integração HTTP end-to-end do servidor', () => {
     assert.equal(res.status, 200)
     const data = await res.json() as any
     assert.equal(data.analyzedSource.finalUrl, 'https://exemplo.com/materia-final')
+    assert.equal(data.analyzedSource.originalUrl, 'https://exemplo.com/materia')
     assert.equal(data.analyzedSource.title, 'Notícia de teste')
     assert.equal(data.analyzedSource.publishedDate, '2024-01-02')
     assert.ok(data.sources.every((source: any) => source.url !== data.analyzedSource.finalUrl))
