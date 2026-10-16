@@ -1151,7 +1151,7 @@
 .sources-grid--compact { grid-template-columns: 1fr; }
 
 /* ---------- Como funciona ---------- */
-.steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--sp-4); counter-reset: step; position: relative; }
+.steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--sp-4); counter-reset: step; position: relative; list-style: none; padding: 0; margin: 0; }
 .step {
   position: relative;
   padding: var(--sp-5);
