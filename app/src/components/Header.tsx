@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import Logo from './Logo'
-import Button from './Button'
 import Icon from './Icon'
 
 const links = [
@@ -33,15 +32,8 @@ export default function Header() {
               {l.label}
             </NavLink>
           ))}
-          <Button variant="outline" className="nav__enter" type="button">
-            Entrar
-          </Button>
         </nav>
         <div className="header-actions">
-          {/* Apenas visual nesta fase: sem autenticação real. */}
-          <Button variant="outline" small id="btn-entrar" type="button">
-            Entrar
-          </Button>
           <button
             type="button"
             className="menu-toggle"
